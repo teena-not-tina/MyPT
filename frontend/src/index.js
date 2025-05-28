@@ -3,6 +3,7 @@ import ReactDOM from "react-dom";
 import App from "./App";
 import { CssBaseline, ThemeProvider, createTheme } from "@mui/material";
 
+
 /**
  * Entry point with Material-UI ThemeProvider.
  * You can customize the theme for your brand colors.
