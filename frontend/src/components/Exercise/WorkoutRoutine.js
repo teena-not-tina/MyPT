@@ -1,5 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, MoreVertical, Plus, Trash2, Edit2, Check, X } from 'lucide-react';
+import ExerciseAnalyzer from './ExerciseAnalyzer';
+
+// Exercise enum for supported exercises
+const Exercise = {
+  PUSHUP: "푸시업",
+  SQUAT: "스쿼트",
+  LEG_RAISE: "레그레이즈",
+  DUMBBELL_CURL: "덤벨컬",
+  ONE_ARM_ROW: "원암 덤벨로우",
+  PLANK: "플랭크"
+};
+
+// Helper function to check if exercise is supported
+const isExerciseSupported = (exerciseName) => {
+  return Object.values(Exercise).includes(exerciseName);
+};
 
 const WorkoutRoutine = () => {
   const [routines, setRoutines] = useState([]);
@@ -8,6 +24,8 @@ const WorkoutRoutine = () => {
   const [editingSet, setEditingSet] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showAnalyzer, setShowAnalyzer] = useState(false);
+  const [selectedExercise, setSelectedExercise] = useState(null);
 
   // Styles
   const styles = {
@@ -324,8 +342,34 @@ const WorkoutRoutine = () => {
   };
 
   const handleCameraClick = async (exerciseName) => {
-    console.log(`Opening camera for ${exerciseName}`);
+    if (!isExerciseSupported(exerciseName)) {
+      console.log(`Exercise ${exerciseName} is not supported for posture analysis`);
+      return;
+    }
+    setSelectedExercise(exerciseName);
+    setShowAnalyzer(true);
   };
+
+  if (showAnalyzer) {
+    return (
+      <div style={styles.container}>
+        <button 
+          onClick={() => setShowAnalyzer(false)}
+          style={{
+            padding: '0.5rem 1rem',
+            marginBottom: '1rem',
+            backgroundColor: '#e5e7eb',
+            border: 'none',
+            borderRadius: '0.5rem',
+            cursor: 'pointer'
+          }}
+        >
+          ← 돌아가기
+        </button>
+        <ExerciseAnalyzer exerciseName={selectedExercise} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -371,13 +415,15 @@ const WorkoutRoutine = () => {
                 <div style={styles.exerciseHeader}>
                   <h3 style={styles.exerciseName}>{exercise.name}</h3>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      onClick={() => handleCameraClick(exercise.name)}
-                      style={styles.iconButton}
-                      title="자세 교정"
-                    >
-                      <Camera size={20} />
-                    </button>
+                    {isExerciseSupported(exercise.name) && (
+                      <button
+                        onClick={() => handleCameraClick(exercise.name)}
+                        style={styles.iconButton}
+                        title="자세 교정"
+                      >
+                        <Camera size={20} />
+                      </button>
+                    )}
                     <div style={{ position: 'relative' }}>
                       <button
                         onClick={() => setEditingExercise(editingExercise === exercise.id ? null : exercise.id)}

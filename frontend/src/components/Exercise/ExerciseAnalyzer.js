@@ -1,4 +1,8 @@
-// frontend/src/components/Exercise/ExerciseAnalyzer.js
+// ExerciseAnalyzer.js (The Frontend)
+
+// What it does: The React component users see - shows webcam, feedback, rep counter
+// Think of it as: The UI that users interact with
+// To use: Import into your React app
 
 import React, { useState, useRef, useEffect } from 'react';
 import Webcam from 'react-webcam';
@@ -11,6 +15,7 @@ const ExerciseAnalyzer = () => {
   const [repCount, setRepCount] = useState(0);
   const [useWebcam, setUseWebcam] = useState(true);
   const [wsConnection, setWsConnection] = useState(null);
+  const [annotatedFrame, setAnnotatedFrame] = useState(null);
   
   const webcamRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -36,11 +41,22 @@ const ExerciseAnalyzer = () => {
       
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        if (data.type === 'feedback' && data.feedback) {
-          setFeedback(data.feedback);
-          if (data.feedback.angles && data.feedback.angles.rep_count !== undefined) {
-            setRepCount(data.feedback.angles.rep_count);
+        console.log('Received WebSocket data:', data.type, data);
+        
+        if (data.type === 'feedback') {
+          if (data.feedback) {
+            setFeedback(data.feedback);
+            if (data.feedback.angles && data.feedback.angles.rep_count !== undefined) {
+              setRepCount(data.feedback.angles.rep_count);
+            }
           }
+          // Update annotated frame if available
+          if (data.annotated_frame) {
+            console.log('Received annotated frame, size:', data.annotated_frame.length);
+            setAnnotatedFrame('data:image/jpeg;base64,' + data.annotated_frame);
+          }
+        } else if (data.type === 'error') {
+          console.error('WebSocket error from server:', data.message);
         }
       };
       
@@ -70,13 +86,14 @@ const ExerciseAnalyzer = () => {
           // Remove data:image/jpeg;base64, prefix
           const base64Data = imageSrc.split(',')[1];
           
+          console.log('Sending frame to WebSocket, size:', base64Data.length);
           wsConnection.send(JSON.stringify({
             type: 'frame',
             exercise: selectedExercise,
             data: base64Data
           }));
         }
-      }, 100); // Send frame every 100ms (10 FPS)
+      }, 200); // Reduced frequency to 5 FPS to reduce load
       
       return () => clearInterval(interval);
     }
@@ -182,13 +199,25 @@ const ExerciseAnalyzer = () => {
         {useWebcam ? (
           <>
             <div className="webcam-container">
+              {/* Hidden webcam for capturing frames */}
               <Webcam
                 ref={webcamRef}
                 screenshotFormat="image/jpeg"
                 width={640}
                 height={480}
-                className="webcam-feed"
+                className={isAnalyzing && annotatedFrame ? "webcam-hidden" : "webcam-feed"}
               />
+              
+              {/* Show annotated frame when analyzing */}
+              {isAnalyzing && annotatedFrame && (
+                <img 
+                  src={annotatedFrame}
+                  alt="Exercise Analysis with Landmarks"
+                  width={640}
+                  height={480}
+                  className="webcam-feed annotated-overlay"
+                />
+              )}
               
               {/* Overlay for feedback */}
               {isAnalyzing && feedback && (
@@ -306,6 +335,25 @@ const styles = `
 .webcam-container {
   position: relative;
   display: inline-block;
+}
+
+.webcam-feed {
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.webcam-hidden {
+  position: absolute;
+  top: -9999px;
+  left: -9999px;
+  visibility: hidden;
+}
+
+.annotated-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
 }
 
 .feedback-overlay {

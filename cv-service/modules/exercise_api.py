@@ -1,6 +1,10 @@
-# cv-service/modules/exercise_api.py
+# exercise_api.py (The Server Endpoints)
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, WebSocket
+# What it does: Creates web endpoints for your React app to talk to
+# Think of it as: A waiter that takes requests from your frontend and returns exercise feedback
+# To use: Add to your cv-service/main.py file
+
+from fastapi import APIRouter, UploadFile, File, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 import cv2
 import numpy as np
@@ -178,7 +182,8 @@ async def websocket_live_analysis(websocket: WebSocket):
     Server responds:
     {
         "type": "feedback",
-        "feedback": { ... }
+        "feedback": { ... },
+        "annotated_frame": "base64_encoded_image"
     }
     """
     await websocket.accept()
@@ -189,40 +194,56 @@ async def websocket_live_analysis(websocket: WebSocket):
             data = await websocket.receive_json()
             
             if data["type"] == "frame":
-                # Decode base64 image
-                image_data = base64.b64decode(data["data"])
-                nparr = np.frombuffer(image_data, np.uint8)
-                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                
-                # Get exercise type
                 try:
-                    exercise_enum = Exercise[data["exercise"].upper()]
-                except KeyError:
+                    # Decode base64 image
+                    image_data = base64.b64decode(data["data"])
+                    nparr = np.frombuffer(image_data, np.uint8)
+                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    
+                    # Get exercise type
+                    try:
+                        exercise_enum = Exercise[data["exercise"].upper()]
+                    except KeyError:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": f"Invalid exercise type: {data['exercise']}"
+                        })
+                        continue
+                    
+                    # Analyze frame
+                    feedback = analyzer.analyze_exercise(frame, exercise_enum)
+                    
+                    # Draw landmarks on frame
+                    annotated_frame = analyzer.draw_landmarks(frame, include_feedback=True, feedback=feedback)
+                    
+                    # Encode annotated frame to base64
+                    _, buffer = cv2.imencode('.jpg', annotated_frame)
+                    annotated_base64 = base64.b64encode(buffer).decode('utf-8')
+                    
+                    if feedback:
+                        # Send feedback with annotated frame
+                        await websocket.send_json({
+                            "type": "feedback",
+                            "feedback": {
+                                "is_correct": feedback.is_correct,
+                                "messages": feedback.feedback_messages,
+                                "angles": feedback.angle_data,
+                                "confidence": feedback.confidence
+                            },
+                            "annotated_frame": annotated_base64
+                        })
+                    else:
+                        await websocket.send_json({
+                            "type": "feedback",
+                            "feedback": None,
+                            "message": "No pose detected",
+                            "annotated_frame": annotated_base64
+                        })
+                except Exception as frame_error:
+                    print(f"Error processing frame: {frame_error}")
                     await websocket.send_json({
                         "type": "error",
-                        "message": f"Invalid exercise type: {data['exercise']}"
-                    })
-                    continue
-                
-                # Analyze frame
-                feedback = analyzer.analyze_exercise(frame, exercise_enum)
-                
-                if feedback:
-                    # Send feedback
-                    await websocket.send_json({
-                        "type": "feedback",
-                        "feedback": {
-                            "is_correct": feedback.is_correct,
-                            "messages": feedback.feedback_messages,
-                            "angles": feedback.angle_data,
-                            "confidence": feedback.confidence
-                        }
-                    })
-                else:
-                    await websocket.send_json({
-                        "type": "feedback",
-                        "feedback": None,
-                        "message": "No pose detected"
+                        "message": f"Error processing frame: {str(frame_error)}"
                     })
                     
             elif data["type"] == "reset":
@@ -232,13 +253,17 @@ async def websocket_live_analysis(websocket: WebSocket):
                     "message": "Exercise state reset"
                 })
                 
+    except WebSocketDisconnect:
+        print("WebSocket client disconnected")
     except Exception as e:
-        await websocket.send_json({
-            "type": "error",
-            "message": str(e)
-        })
-    finally:
-        await websocket.close()
+        print(f"WebSocket error: {str(e)}")
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": str(e)
+            })
+        except:
+            pass
 
 
 @router.get("/exercises")

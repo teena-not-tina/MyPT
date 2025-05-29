@@ -471,38 +471,57 @@ class ExerciseAnalyzer:
         )
     
     def analyze_exercise(self, frame: np.ndarray, exercise: Exercise) -> Optional[PostureFeedback]:
-        """Main method to analyze any exercise."""
+        """Analyze exercise form in a frame."""
+        print(f"\nStarting analysis for {exercise.value}")
+        print(f"Frame shape: {frame.shape}, dtype: {frame.dtype}")
+        
         # Convert frame to MediaPipe format
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
+        print("Converted frame to MediaPipe format")
         
         # Detect pose
         detection_result = self.detector.detect(mp_image)
+        print(f"Detection result: {detection_result}")
         
         if not detection_result.pose_landmarks:
+            print("No pose landmarks detected")
             return None
-        
-        # Use first detected person
-        landmarks = detection_result.pose_landmarks[0]
+            
+        print(f"Number of landmarks detected: {len(detection_result.pose_landmarks)}")
+        print(f"First landmark coordinates: {detection_result.pose_landmarks[0]}")
         
         # Apply smoothing
         if self.prev_landmarks is not None:
-            landmarks = self.smooth_landmarks(landmarks, self.prev_landmarks, self.alpha)
-        self.prev_landmarks = landmarks
+            detection_result.pose_landmarks = self.smooth_landmarks(
+                detection_result.pose_landmarks, 
+                self.prev_landmarks, 
+                self.alpha
+            )
+        self.prev_landmarks = detection_result.pose_landmarks
         
         # Analyze based on exercise type
-        if exercise == Exercise.PUSHUP:
-            return self.analyze_pushup(landmarks)
-        elif exercise == Exercise.SQUAT:
-            return self.analyze_squat(landmarks)
-        elif exercise == Exercise.LEG_RAISE:
-            return self.analyze_leg_raise(landmarks)
-        elif exercise == Exercise.DUMBBELL_CURL:
-            return self.analyze_dumbbell_curl(landmarks)
-        elif exercise == Exercise.ONE_ARM_ROW:
-            return self.analyze_one_arm_row(landmarks)
-        elif exercise == Exercise.PLANK:
-            return self.analyze_plank(landmarks)
-        else:
+        try:
+            if exercise == Exercise.PUSHUP:
+                result = self.analyze_pushup(detection_result.pose_landmarks)
+            elif exercise == Exercise.SQUAT:
+                result = self.analyze_squat(detection_result.pose_landmarks)
+            elif exercise == Exercise.LEG_RAISE:
+                result = self.analyze_leg_raise(detection_result.pose_landmarks)
+            elif exercise == Exercise.DUMBBELL_CURL:
+                result = self.analyze_dumbbell_curl(detection_result.pose_landmarks)
+            elif exercise == Exercise.ONE_ARM_ROW:
+                result = self.analyze_one_arm_row(detection_result.pose_landmarks)
+            elif exercise == Exercise.PLANK:
+                result = self.analyze_plank(detection_result.pose_landmarks)
+            else:
+                print(f"Unknown exercise type: {exercise}")
+                return None
+                
+            print(f"Analysis complete. Feedback: {result}")
+            return result
+            
+        except Exception as e:
+            print(f"Error during analysis: {str(e)}")
             return None
     
     def draw_landmarks(self, frame: np.ndarray, include_feedback: bool = True, 

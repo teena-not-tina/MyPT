@@ -33,7 +33,7 @@ function App() {
     <div className="App">
       {/* Your app header/navigation here */}
       <header className="bg-blue-600 text-white p-4">
-        <h1 className="text-2xl font-bold">B-Fit Health App</h1>
+        <h1 className="text-2xl font-bold text-center">B-Fit Health App</h1>
       </header>
 
       {/* Main content */}
