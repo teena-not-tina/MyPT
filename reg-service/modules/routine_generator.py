@@ -1,7 +1,11 @@
 import asyncio
+import hashlib
 import threading
+import hashlib
+import os
+import json
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from openai import OpenAI
 from config.settings import OPENAI_API_KEY, SYSTEM_PROMPT, GPT_MODEL, GPT_TEMPERATURE, CHATBOT_PROMPT         
 import glob
@@ -24,6 +28,9 @@ class AIAnalyzer:
             openai_api_key=OPENAI_API_KEY
         )
         
+        # 문서 메타데이터 파일 경로
+        self.metadata_file = "./data/.vector_store_metadata.json"
+        
         # 문서 로딩 상태 관리
         self._documents_loaded = False
         self._loading_in_progress = False
@@ -33,19 +40,93 @@ class AIAnalyzer:
         # 백그라운드에서 문서 초기화 시작
         self._start_background_initialization()
     
-    def _start_background_initialization(self):
-        """백그라운드에서 VectorStore 초기화 시작"""
-        self._loading_thread = threading.Thread(
-            target=self._initialize_vector_store_sync,
-            daemon=True  # 메인 프로세스 종료 시 함께 종료
-        )
-        self._loading_thread.start()
+    def _get_file_hash(self, file_path: str) -> str:
+        """파일의 해시값(MD5) 반환"""
+        hash_md5 = hashlib.md5()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_md5.update(chunk)
+        return hash_md5.hexdigest()
+    
+    def _get_file_metadata(self, filepath: str) -> Dict[str, Any]:
+        try:
+            stat = os.stat(filepath)
+            stored = self._load_stored_metadata().get(filepath, {})
+            # 수정시간이 같으면 기존 해시 재사용
+            if stored and stat.st_mtime == stored.get("modified_time"):
+                file_hash = stored.get("hash")
+            else:
+                file_hash = self._get_file_hash(filepath)
+            return {
+                "path": filepath,
+                "size": stat.st_size,
+                "modified_time": stat.st_mtime,
+                "hash": file_hash
+            }
+        except Exception as e:
+            print(f"파일 메타데이터 생성 실패 {filepath}: {e}")
+            return {}
+    
+    def _load_stored_metadata(self) -> Dict[str, Dict[str, Any]]:
+        """저장된 메타데이터 로드"""
+        try:
+            if os.path.exists(self.metadata_file):
+                with open(self.metadata_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"메타데이터 로드 실패: {e}")
+        return {}
+    
+    def _save_metadata(self, metadata: Dict[str, Dict[str, Any]]):
+        """메타데이터 저장"""
+        try:
+            os.makedirs(os.path.dirname(self.metadata_file), exist_ok=True)
+            with open(self.metadata_file, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"메타데이터 저장 실패: {e}")
+    
+    def _has_files_changed(self, current_files: List[str], stored_metadata: Dict[str, Dict[str, Any]]) -> tuple[bool, List[str], List[str]]:
+        """
+        파일 변경 여부 확인
+        Returns: (has_changed, new_files, changed_files)
+        """
+        new_files = []
+        changed_files = []
+        
+        for filepath in current_files:
+            current_metadata = self._get_file_metadata(filepath)
+            stored_file_metadata = stored_metadata.get(filepath, {})
+            
+            if not stored_file_metadata:
+                # 새로운 파일
+                new_files.append(filepath)
+            else:
+                # 기존 파일의 변경 여부 확인
+                if (current_metadata.get("hash") != stored_file_metadata.get("hash") or
+                    current_metadata.get("size") != stored_file_metadata.get("size") or
+                    current_metadata.get("modified_time") != stored_file_metadata.get("modified_time")):
+                    changed_files.append(filepath)
+        
+        has_changed = len(new_files) > 0 or len(changed_files) > 0
+        return has_changed, new_files, changed_files
+    
+    def _check_vector_store_exists(self) -> bool:
+        """VectorStore에 데이터가 존재하는지 확인"""
+        try:
+            stats = self.vector_store.get_collection_stats()
+            total_docs = stats.get('total_documents', 0)
+            return total_docs > 0
+        except Exception as e:
+            print(f"VectorStore 상태 확인 실패: {e}")
+            return False
     
     def _initialize_vector_store_sync(self):
         """동기적 VectorStore 초기화 (백그라운드 스레드에서 실행)"""
         try:
             self._loading_in_progress = True
-            #PDF 파일들 찾기
+            
+            # PDF 파일들 찾기
             pdf_files = glob.glob("./data/*.pdf")
             existing_files = [f for f in pdf_files if self._file_exists(f)]
             
@@ -54,22 +135,63 @@ class AIAnalyzer:
                 self._documents_loaded = True
                 return
 
-            processed_files = self.vector_store.get_processed_files() if hasattr(self.vector_store, 'get_processed_files') else []
-
-            files_to_add = [f for f in existing_files if f not in processed_files]
-            # 기존에 문서가 있는지 확인
-            stats = self.vector_store.get_collection_stats()
+            # 저장된 메타데이터 로드
+            stored_metadata = self._load_stored_metadata()
             
-            if files_to_add:
-                print(f"백그라운드에서 VectorStore에 {len(files_to_add)}개 새 문서 추가 중...")
-                self.vector_store.add_documents(files_to_add, extract_images=True)
-                print("새 문서 추가 완료")
+            # 파일 변경 여부 확인
+            has_changed, new_files, changed_files = self._has_files_changed(existing_files, stored_metadata)
+            
+            # VectorStore에 데이터가 존재하는지 확인
+            vector_store_exists = self._check_vector_store_exists()
+            
+            print(f"VectorStore 존재 여부: {vector_store_exists}")
+            print(f"새로운 파일: {len(new_files)}개")
+            print(f"변경된 파일: {len(changed_files)}개")
+            
+            if vector_store_exists and not has_changed:
+                # 기존 데이터가 있고 파일에 변경이 없으면 기존 데이터 사용
+                print("기존 VectorStore 데이터를 사용합니다.")
+                self._documents_loaded = True
+                return
+            
+            # 새로운 파일이나 변경된 파일이 있으면 처리
+            files_to_process = new_files + changed_files
+            
+            if files_to_process:
+                print(f"VectorStore에 {len(files_to_process)}개 문서 처리 중...")
+                
+                # 변경된 파일이 있으면 해당 파일의 기존 데이터 삭제 (VectorStore가 지원하는 경우)
+                if changed_files:
+                    for changed_file in changed_files:
+                        try:
+                            # VectorStore에서 해당 파일의 기존 데이터 삭제
+                            if hasattr(self.vector_store, 'delete_documents_by_source'):
+                                self.vector_store.delete_documents_by_source(changed_file)
+                                print(f"기존 데이터 삭제: {changed_file}")
+                        except Exception as e:
+                            print(f"기존 데이터 삭제 실패 {changed_file}: {e}")
+                
+                # 새로운/변경된 문서 추가
+                self.vector_store.add_documents(files_to_process, extract_images=True)
+                print("문서 처리 완료")
+                
+                # 메타데이터 업데이트
+                current_metadata = stored_metadata.copy()
+                for filepath in files_to_process:
+                    current_metadata[filepath] = self._get_file_metadata(filepath)
+                
+                self._save_metadata(current_metadata)
+                print("메타데이터 업데이트 완료")
+            
+            elif vector_store_exists:
+                print("모든 파일이 이미 VectorStore에 최신 상태로 존재합니다.")
             else:
-                print("모든 PDF 파일이 이미 VectorStore에 존재합니다.")
+                # VectorStore가 비어있지만 처리할 파일도 없는 경우
+                print("처리할 파일이 없습니다.")
         
-        # 최종 통계
+            # 최종 통계
             stats = self.vector_store.get_collection_stats()
-            print(f"총 문서 수: {stats.get('total_documents', 0)}")
+            print(f"VectorStore 총 문서 수: {stats.get('total_documents', 0)}")
         
             self._documents_loaded = True
 
@@ -77,6 +199,14 @@ class AIAnalyzer:
             print(f"VectorStore 초기화 중 오류: {e}")
         finally:
             self._loading_in_progress = False
+    
+    def _start_background_initialization(self):
+        """백그라운드에서 VectorStore 초기화 시작"""
+        self._loading_thread = threading.Thread(
+            target=self._initialize_vector_store_sync,
+            daemon=True  # 메인 프로세스 종료 시 함께 종료
+        )
+        self._loading_thread.start()
     
     async def _initialize_vector_store_async(self):
         """비동기 VectorStore 초기화"""
@@ -99,7 +229,6 @@ class AIAnalyzer:
     def _file_exists(self, filepath: str) -> bool:
         """파일 존재 여부 확인"""
         try:
-            import os
             return os.path.exists(filepath)
         except:
             return False
@@ -111,6 +240,28 @@ class AIAnalyzer:
             "loading_in_progress": self._loading_in_progress,
             "can_use_vector_search": self._documents_loaded
         }
+    
+    def force_reload_documents(self) -> bool:
+        """강제로 문서 재로딩 (개발/테스트용)"""
+        try:
+            # 메타데이터 파일 삭제
+            if os.path.exists(self.metadata_file):
+                os.remove(self.metadata_file)
+            
+            # VectorStore 초기화 (컬렉션 삭제 후 재생성)
+            if hasattr(self.vector_store, 'clear_collection'):
+                self.vector_store.clear_collection()
+            
+            # 상태 초기화
+            self._documents_loaded = False
+            
+            # 재초기화 시작
+            self._start_background_initialization()
+            
+            return True
+        except Exception as e:
+            print(f"강제 재로딩 실패: {e}")
+            return False
     
     def wait_for_documents(self, timeout: float = 30.0) -> bool:
         """문서 로딩 완료까지 대기 (선택적)"""
@@ -146,7 +297,7 @@ class AIAnalyzer:
                 model=GPT_MODEL,
                 messages=messages,
                 temperature=GPT_TEMPERATURE,
-                max_tokens=2000
+                max_tokens=1500
             )
             
             recommendation = response.choices[0].message.content
@@ -271,7 +422,7 @@ class AIAnalyzer:
         try:
             relevant_context = self.vector_store.get_relevant_context(
                 f"{user_message} 운동 피트니스 건강", 
-                max_context_length=1000
+                max_context_length=700
             )
             
             return relevant_context if relevant_context.strip() else ""
@@ -335,7 +486,7 @@ class AIAnalyzer:
                 model=GPT_MODEL,
                 messages=messages,
                 temperature=GPT_TEMPERATURE,
-                max_tokens=2000
+                max_tokens=1500
             )
             
             return response.choices[0].message.content or "루틴 생성에 실패했습니다."
@@ -358,6 +509,12 @@ class AIAnalyzer:
         try:
             added_count = self.vector_store.add_documents(pdf_paths, extract_images=True)
             if added_count > 0:
+                # 메타데이터 업데이트
+                stored_metadata = self._load_stored_metadata()
+                for filepath in pdf_paths:
+                    stored_metadata[filepath] = self._get_file_metadata(filepath)
+                self._save_metadata(stored_metadata)
+                
                 self._documents_loaded = True
             return added_count > 0
         except Exception as e:

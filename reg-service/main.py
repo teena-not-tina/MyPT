@@ -4,11 +4,14 @@ import tempfile
 from pathlib import Path
 import json
 from datetime import datetime
+from dotenv import load_dotenv
 
 # 모듈 import
 from modules.chatbot import FitnessChatbot, ChatbotSessionManager
 from modules.pdf_processor import PDFProcessor
 from modules.utils import create_upload_directory, save_uploaded_file, validate_uploaded_file, cleanup_temp_files, format_recommendation
+
+load_dotenv()
 
 # Streamlit 페이지 설정
 st.set_page_config(
@@ -299,7 +302,7 @@ def process_chat_message(user_input: str):
     
     try:
         with st.spinner("🤖 AI 코치가 답변을 준비하고 있습니다..."):
-            # 챗봇에게 메시지 전달
+            # 챗봇에게 메시지 전달``
             response = st.session_state.current_chatbot.handle_user_input(user_input)
             
             if response and "오류가 발생했습니다" not in response:

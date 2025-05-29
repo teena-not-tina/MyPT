@@ -4,6 +4,7 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 import pickle
+import hashlib
 
 import numpy as np
 import pandas as pd
@@ -190,7 +191,15 @@ class VectorStore:
             logger.error(f"PDF 텍스트 추출 실패: {e}")
         
         return chunks
-    
+    def _get_file_hash(self, file_path: str) -> str:
+        """파일의 해시값(MD5) 반환"""
+        hash_md5 = hashlib.md5()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_md5.update(chunk)
+        return hash_md5.hexdigest()
+
+
     def extract_images_from_pdf(self, pdf_path: str, output_dir: str = "./extracted_images") -> List[Dict[str, Any]]:
         """
         PDF에서 이미지 추출
@@ -279,6 +288,7 @@ class VectorStore:
         return chunks
     
     def add_documents(self, pdf_paths: List[str], extract_images: bool = True) -> int:
+        total_added = 0
         """
         PDF 문서들을 벡터 데이터베이스에 추가
         
@@ -296,6 +306,12 @@ class VectorStore:
                 logger.warning(f"파일이 존재하지 않음: {pdf_path}")
                 continue
             
+            file_hash = self._get_file_hash(pdf_path)
+            prev_meta = self.metadata_store.get(pdf_path, {})
+            if prev_meta.get('file_hash') == file_hash and prev_meta.get('processed', False):
+                logger.info(f"이미 처리된 파일(변경 없음): {pdf_path} -> 건너뜀")
+                continue    
+
             logger.info(f"문서 처리 중: {pdf_path}")
             
             # 텍스트 추출 및 임베딩
@@ -352,6 +368,7 @@ class VectorStore:
             # 메타데이터 업데이트
             self.metadata_store[pdf_path] = {
                 'processed': True,
+                'file_hash': file_hash,
                 'text_chunks': len(text_chunks),
                 'images': len(images) if extract_images else 0,
                 'timestamp': pd.Timestamp.now().isoformat()
