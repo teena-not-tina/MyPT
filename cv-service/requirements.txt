@@ -1,0 +1,24 @@
+
+# 기존 패키지들 (Detection/OCR/Gemini 관련)
+fastapi>=0.104.1
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+Pillow>=10.1.0
+opencv-python>=4.8.1
+numpy>=1.24.3
+torch>=2.1.0
+torchvision>=0.16.0
+ultralytics>=8.0.196
+python-dotenv>=1.0.0
+
+# 새로 추가: MongoDB 관련
+motor>=3.3.2
+pymongo>=4.6.0
+
+# 추가 유틸리티
+pydantic>=2.5.0
+typing-extensions>=4.8.0
+
+# 기존 패키지들 (필요시 추가)
+# requests>=2.31.0
+# aiofiles>=23.2.1

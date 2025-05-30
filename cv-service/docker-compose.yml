@@ -1,0 +1,48 @@
+version: '3.8'
+services:
+  # 통합 웹 애플리케이션 (백엔드 + 프론트엔드)
+  web:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./temp:/app/temp  # 임시 파일용 볼륨
+      - ./yolo11s.pt:/app/yolo11s.pt  # YOLO 모델 파일
+    environment:
+      - FLASK_ENV=production
+      - FLASK_DEBUG=false
+    restart: unless-stopped
+    
+  # 개발용 - 별도 프론트엔드 서버 (선택사항)
+  frontend-dev:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+    profiles:
+      - dev
+    depends_on:
+      - web
+
+  # 필요시 데이터베이스 추가
+  # db:
+  #   image: postgres:13
+  #   environment:
+  #     POSTGRES_DB: mypt
+  #     POSTGRES_USER: user
+  #     POSTGRES_PASSWORD: password
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+
+# volumes:
+#   postgres_data:
