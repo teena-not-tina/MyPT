@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 const FoodDetectionApp = () => {
   const [currentMode, setCurrentMode] = useState('home');
@@ -14,9 +14,27 @@ const FoodDetectionApp = () => {
   const [statusMessage, setStatusMessage] = useState('해먹기 또는 사먹기를 선택하세요.');
   const [isDragOver, setIsDragOver] = useState(false);
   const [activeTab, setActiveTab] = useState('detection');
+  const [showSaveButton, setShowSaveButton] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [userId, setUserId] = useState('user_' + Date.now()); // 임시 사용자 ID
+  const [clearBeforeAnalysis, setClearBeforeAnalysis] = useState(false);
   
   const fileInputRef = useRef(null);
+  const analysisTimeoutRef = useRef(null); // 중복 실행 방지용
   const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://192.168.0.19:8000';
+
+  // 컴포넌트 언마운트 시 timeout 정리
+  useEffect(() => {
+    return () => {
+      if (analysisTimeoutRef.current) {
+        clearTimeout(analysisTimeoutRef.current);
+      }
+    };
+  }, []);
+  
+  // Gemini API 설정
+  const GEMINI_API_KEY = process.env.REACT_APP_GEMINI_API_KEY || 'AIzaSyBBHRss0KLaEeeAgggsVOIGQ_zhS5ssDGw';
+  const GEMINI_API_URL = process.env.REACT_APP_GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 
   // 기본 아이콘 컴포넌트들
   const CookingIcon = () => <span className="text-2xl">👨‍🍳</span>;
@@ -31,6 +49,8 @@ const FoodDetectionApp = () => {
   const PlusIcon = () => <span className="text-sm">+</span>;
   const MinusIcon = () => <span className="text-sm">-</span>;
   const DeleteIcon = () => <span className="text-sm">🗑️</span>;
+  const SaveIcon = () => <span className="text-sm">💾</span>;
+  const CheckIcon = () => <span className="text-sm">✅</span>;
   const LoadingSpinner = () => (
     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
   );
@@ -54,36 +74,180 @@ const FoodDetectionApp = () => {
     );
   };
 
-  // 냉장고에 식재료 추가 (간단 버전)
+  // MongoDB에 냉장고 데이터 저장 - 현재 상태 기준 저장으로 수정
+  const saveToMongoDB = async () => {
+    if (fridgeIngredients.length === 0) {
+      setStatusMessage('저장할 식재료가 없습니다.');
+      return;
+    }
+
+    setIsSaving(true);
+    console.log('💾 MongoDB 현재 상태 저장 시작:', fridgeIngredients);
+
+    try {
+      // 현재 fridgeIngredients 상태를 그대로 저장 (중복 합산 방지)
+      const saveData = {
+        userId: userId,
+        ingredients: fridgeIngredients, // 현재 상태 그대로 저장
+        timestamp: new Date().toISOString(),
+        totalCount: fridgeIngredients.reduce((sum, item) => sum + item.quantity, 0),
+        totalTypes: fridgeIngredients.length
+      };
+
+      console.log('💾 저장할 데이터:', saveData);
+
+      // MongoDB 저장 API 호출
+      const saveResponse = await fetch(`${API_BASE_URL}/api/fridge/save`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(saveData),
+      });
+
+      if (saveResponse.ok) {
+        const result = await saveResponse.json();
+        console.log('✅ MongoDB 저장 성공:', result);
+        
+        setStatusMessage(`✅ 냉장고 데이터가 성공적으로 저장되었습니다! (총 ${fridgeIngredients.length}종류, ${fridgeIngredients.reduce((sum, item) => sum + item.quantity, 0)}개)`);
+        setShowSaveButton(false);
+        
+        // 성공 후 3초 뒤에 메시지 초기화
+        setTimeout(() => {
+          setStatusMessage('저장 완료');
+        }, 3000);
+      } else {
+        const errorData = await saveResponse.json();
+        throw new Error(errorData.message || '저장 실패');
+      }
+    } catch (error) {
+      console.error('❌ MongoDB 저장 실패:', error);
+      
+      // 실제 서버가 없을 경우 로컬 저장으로 대체
+      try {
+        const localData = {
+          userId: userId,
+          ingredients: fridgeIngredients, // 현재 상태 그대로 저장
+          timestamp: new Date().toISOString(),
+          totalCount: fridgeIngredients.reduce((sum, item) => sum + item.quantity, 0),
+          totalTypes: fridgeIngredients.length
+        };
+        
+        localStorage.setItem(`fridge_${userId}`, JSON.stringify(localData));
+        console.log('💾 로컬 저장 완료:', localData);
+        setStatusMessage(`📱 로컬에 저장되었습니다 (총 ${fridgeIngredients.length}종류) - 서버 연결 실패`);
+        setShowSaveButton(false);
+      } catch (localError) {
+        console.error('❌ 로컬 저장도 실패:', localError);
+        setStatusMessage(`❌ 저장 실패: ${error.message}`);
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // MongoDB에서 냉장고 데이터 불러오기 - 기존 데이터 교체 방식
+  const loadFromMongoDB = async () => {
+    console.log('📥 MongoDB 데이터 로드 시작');
+
+    try {
+      const loadResponse = await fetch(`${API_BASE_URL}/api/fridge/load/${userId}`);
+
+      if (loadResponse.ok) {
+        const result = await loadResponse.json();
+        console.log('✅ MongoDB 로드 성공:', result);
+        
+        if (result.ingredients && result.ingredients.length > 0) {
+          // 기존 데이터를 완전히 교체 (중복 합산 방지)
+          setFridgeIngredients(result.ingredients);
+          setStatusMessage(`📥 저장된 데이터를 불러왔습니다 (${result.totalTypes}종류, ${result.totalCount}개)`);
+          setShowSaveButton(false); // 불러온 후 저장 버튼 숨김
+          console.log('🔄 냉장고 데이터 교체 완료:', result.ingredients);
+        } else {
+          setStatusMessage('저장된 데이터가 없습니다.');
+        }
+      } else {
+        throw new Error('데이터 로드 실패');
+      }
+    } catch (error) {
+      console.error('❌ MongoDB 로드 실패:', error);
+      
+      // 로컬 저장소에서 시도
+      try {
+        const localData = localStorage.getItem(`fridge_${userId}`);
+        if (localData) {
+          const parsed = JSON.parse(localData);
+          // 기존 데이터를 완전히 교체 (중복 합산 방지)
+          setFridgeIngredients(parsed.ingredients || []);
+          setStatusMessage(`📱 로컬 데이터를 불러왔습니다 (${parsed.totalTypes || 0}종류)`);
+          setShowSaveButton(false); // 불러온 후 저장 버튼 숨김
+          console.log('🔄 로컬 냉장고 데이터 교체 완료:', parsed.ingredients);
+        } else {
+          setStatusMessage('저장된 데이터가 없습니다.');
+        }
+      } catch (localError) {
+        setStatusMessage('데이터 로드 실패');
+      }
+    }
+  };
+
+  // 냉장고에 식재료 추가 - 완전한 중복 방지 로직
   const addToFridge = (newIngredients) => {
-    console.log('냉장고에 추가할 식재료:', newIngredients);
+    console.log('🧊 냉장고에 추가 요청:', newIngredients);
     
-    setFridgeIngredients(prev => {
-      const updated = [...prev];
-      let maxId = updated.length > 0 ? Math.max(...updated.map(item => item.id)) : 0;
+    setFridgeIngredients(prevIngredients => {
+      console.log('🔍 현재 냉장고 상태:', prevIngredients);
+      
+      // 새로운 배열 생성 (불변성 유지)
+      const updatedIngredients = [...prevIngredients];
+      let maxId = updatedIngredients.length > 0 ? Math.max(...updatedIngredients.map(item => item.id)) : 0;
+      let addedCount = 0;
+      let updatedCount = 0;
 
       newIngredients.forEach(newItem => {
-        const existingIndex = updated.findIndex(item => 
-          item.name === newItem.name
+        // 동일한 이름의 식재료가 이미 있는지 확인
+        const existingItemIndex = updatedIngredients.findIndex(item => 
+          item.name.trim().toLowerCase() === newItem.name.trim().toLowerCase()
         );
 
-        if (existingIndex >= 0) {
-          // 기존 식재료가 있으면 수량 증가
-          updated[existingIndex].quantity += newItem.quantity;
+        if (existingItemIndex !== -1) {
+          // 🔄 기존 식재료 수량 증가
+          const oldQuantity = updatedIngredients[existingItemIndex].quantity;
+          updatedIngredients[existingItemIndex] = {
+            ...updatedIngredients[existingItemIndex],
+            quantity: oldQuantity + newItem.quantity,
+            confidence: Math.max(
+              updatedIngredients[existingItemIndex].confidence || 0, 
+              newItem.confidence || 0
+            ),
+            source: newItem.source || updatedIngredients[existingItemIndex].source
+          };
+          updatedCount++;
+          console.log(`🔄 수량 업데이트: ${newItem.name} (${oldQuantity} → ${oldQuantity + newItem.quantity})`);
         } else {
-          // 새로운 식재료 추가
-          updated.push({
+          // ➕ 새로운 식재료 추가
+          const newIngredient = {
             id: ++maxId,
-            name: newItem.name,
+            name: newItem.name.trim(),
             quantity: newItem.quantity,
             confidence: newItem.confidence || 0.8,
             source: newItem.source || 'analysis'
-          });
+          };
+          updatedIngredients.push(newIngredient);
+          addedCount++;
+          console.log(`➕ 새 식재료 추가: ${newItem.name} ${newItem.quantity}개`);
         }
       });
 
-      console.log('업데이트된 냉장고:', updated);
-      return updated;
+      console.log(`📊 변경 요약: 신규 ${addedCount}개, 업데이트 ${updatedCount}개`);
+      console.log('🧊 최종 냉장고 상태:', updatedIngredients);
+      
+      // 식재료가 있으면 저장 버튼 표시
+      if (updatedIngredients.length > 0) {
+        setShowSaveButton(true);
+      }
+      
+      return updatedIngredients;
     });
   };
 
@@ -170,11 +334,83 @@ const FoodDetectionApp = () => {
     }
   };
 
-  // 영어 → 한글 번역
-  const translateToKorean = (englishName) => {
-    const translations = {
+  // Gemini API 직접 호출 함수
+  const callGeminiAPI = async (prompt) => {
+    try {
+      console.log('🤖 Gemini API 호출:', prompt);
+      
+      const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            topK: 1,
+            topP: 1,
+            maxOutputTokens: 50,
+          }
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        console.log('✅ Gemini 응답:', text);
+        return text.trim();
+      } else {
+        throw new Error(`Gemini API 오류: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('❌ Gemini API 호출 실패:', error);
+      throw error;
+    }
+  };
+
+  // Gemini를 통한 영어 → 한글 번역
+  const translateToKoreanWithGemini = async (englishName) => {
+    try {
+      console.log(`🌐 Gemini 번역 요청: "${englishName}"`);
+      
+      const prompt = `다음 영어 식재료명을 정확한 한국어로 번역해주세요. 한 단어로만 답해주세요.
+
+영어 식재료: "${englishName}"
+
+번역 규칙:
+- 식재료/음식 이름만 번역
+- 한국어 한 단어로만 답변
+- 불필요한 설명이나 문장 금지
+- 예시: apple → 사과, banana → 바나나, strawberry → 딸기
+
+한국어 번역:`;
+
+      const translatedText = await callGeminiAPI(prompt);
+      const cleanTranslation = translatedText.replace(/[^\가-힣]/g, '').trim();
+      
+      if (cleanTranslation && cleanTranslation.length > 0) {
+        console.log(`✅ Gemini 번역 성공: "${englishName}" → "${cleanTranslation}"`);
+        return cleanTranslation;
+      } else {
+        throw new Error('번역 결과가 비어있음');
+      }
+    } catch (error) {
+      console.warn(`❌ Gemini 번역 실패: "${englishName}"`, error);
+      // Gemini 실패시 기본 번역 테이블 사용
+      return translateToKoreanFallback(englishName);
+    }
+  };
+
+  // Gemini 실패시 대체 번역 테이블 (최소한의 기본 번역)
+  const translateToKoreanFallback = (englishName) => {
+    const basicTranslations = {
       'apple': '사과',
-      'banana': '바나나',
+      'banana': '바나나', 
       'carrot': '당근',
       'tomato': '토마토',
       'orange': '오렌지',
@@ -182,33 +418,115 @@ const FoodDetectionApp = () => {
       'potato': '감자',
       'cucumber': '오이',
       'lettuce': '상추',
-      'broccoli': '브로콜리',
-      'pepper': '피망',
-      'garlic': '마늘',
-      'mushroom': '버섯',
-      'corn': '옥수수',
-      'grape': '포도',
-      'strawberry': '딸기',
-      'lemon': '레몬',
-      'cabbage': '양배추',
-      'spinach': '시금치',
-      'eggplant': '가지'
+      'broccoli': '브로콜리'
     };
-    return translations[englishName.toLowerCase()] || englishName;
+    
+    const translated = basicTranslations[englishName.toLowerCase()];
+    console.log(`🔄 기본 번역 사용: "${englishName}" → "${translated || englishName}"`);
+    return translated || englishName;
   };
 
-  // Detection 결과 처리 (수량 합산 없이)
-  const processDetectionResults = (detections) => {
-    console.log('Detection 처리:', detections);
-    
-    const ingredients = detections.map((detection, index) => ({
-      name: translateToKorean(detection.class),
-      quantity: 1, // 각각 1개씩
-      confidence: detection.confidence,
-      source: 'detection'
-    }));
+  // Detection된 영역을 잘라서 개별 이미지 생성
+  const extractIngredientImages = async (detections, originalImage) => {
+    if (!detections || detections.length === 0 || !originalImage) {
+      console.log('이미지 추출 불가: Detection 결과나 원본 이미지가 없음');
+      return [];
+    }
 
-    console.log('변환된 식재료:', ingredients);
+    console.log('🖼️ === 식재료 이미지 추출 시작 ===');
+    console.log('추출할 Detection 수:', detections.length);
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        const extractedImages = [];
+        
+        detections.forEach((detection, index) => {
+          if (detection.bbox && detection.bbox.length === 4) {
+            const [x1, y1, x2, y2] = detection.bbox;
+            const width = x2 - x1;
+            const height = y2 - y1;
+            
+            // 유효한 bbox인지 확인
+            if (width > 0 && height > 0) {
+              // Canvas 크기 설정
+              canvas.width = width;
+              canvas.height = height;
+              
+              // 해당 영역만 캔버스에 그리기
+              ctx.drawImage(
+                img,
+                x1, y1, width, height,  // 원본에서 자를 영역
+                0, 0, width, height     // 캔버스에 그릴 영역
+              );
+              
+              // Canvas를 base64로 변환
+              const croppedImageData = canvas.toDataURL('image/jpeg', 0.8);
+              
+              extractedImages.push({
+                index: index,
+                class: detection.class,
+                confidence: detection.confidence,
+                bbox: detection.bbox,
+                imageData: croppedImageData
+              });
+              
+              console.log(`✅ 이미지 추출 ${index + 1}: ${detection.class} (${width}x${height})`);
+            } else {
+              console.log(`❌ 유효하지 않은 bbox ${index + 1}: ${detection.class}`);
+            }
+          } else {
+            console.log(`❌ bbox 정보 없음 ${index + 1}: ${detection.class}`);
+          }
+        });
+        
+        console.log('🖼️ === 이미지 추출 완료 ===');
+        console.log('성공적으로 추출된 이미지 수:', extractedImages.length);
+        resolve(extractedImages);
+      };
+      
+      img.onerror = () => {
+        console.error('❌ 이미지 로드 실패');
+        resolve([]);
+      };
+      
+      img.src = originalImage;
+    });
+  };
+
+  // Detection 결과 처리 - 이미지 포함 버전 (표시 전용)
+  const processDetectionResults = async (detections, originalImage) => {
+    console.log('🎯 Detection 처리 시작 (표시 전용):', detections);
+    
+    // 1단계: 개별 이미지 추출
+    const extractedImages = await extractIngredientImages(detections, originalImage);
+    
+    const ingredients = [];
+    
+    // 2단계: 각 탐지 결과를 Gemini로 번역하고 이미지 포함 (표시만, 대시보드 추가 안함)
+    for (let i = 0; i < detections.length; i++) {
+      const detection = detections[i];
+      const koreanName = await translateToKoreanWithGemini(detection.class);
+      
+      // 해당하는 추출된 이미지 찾기
+      const extractedImage = extractedImages.find(img => img.index === i);
+      
+      ingredients.push({
+        name: koreanName,
+        quantity: 1, // 각각 1개씩
+        confidence: detection.confidence,
+        source: 'detection',
+        bbox: detection.bbox,
+        originalClass: detection.class,
+        imageData: extractedImage ? extractedImage.imageData : null,
+        hasImage: !!extractedImage
+      });
+    }
+
+    console.log('✅ Detection 처리 완료 (표시 전용):', ingredients);
     return ingredients;
   };
 
@@ -219,9 +537,41 @@ const FoodDetectionApp = () => {
     
     // 분석 규칙들 (실제 OCR 패턴에 맞게 개선)
     const smartRules = [
+      // 아몬드 음료 패턴들 (ml, 추출액 키워드 포함)
+      {
+        pattern: /(아몬드|ALMOND|almond).*?(ml|mL|ML|추출액|우유|milk|MILK|음료|beverage)/i,
+        result: '아몬드우유',
+        originalKeyword: 'almond',
+        description: '아몬드 + 음료키워드 → 아몬드우유'
+      },
+      
+      // 두유 패턴들
+      {
+        pattern: /(두유|콩|SOY|soy).*?(ml|mL|ML|추출액|우유|milk|MILK|음료)/i,
+        result: '두유',
+        originalKeyword: 'soy',
+        description: '콩/두유 + 음료키워드 → 두유'
+      },
+      
+      // 오트밀 음료 패턴들
+      {
+        pattern: /(오트|귀리|OAT|oat).*?(ml|mL|ML|추출액|우유|milk|MILK|음료)/i,
+        result: '오트밀크',
+        originalKeyword: 'oat',
+        description: '오트/귀리 + 음료키워드 → 오트밀크'
+      },
+      
+      // 코코넛 음료 패턴들
+      {
+        pattern: /(코코넛|coconut|COCONUT).*?(ml|mL|ML|추출액|우유|milk|MILK|음료)/i,
+        result: '코코넛밀크',
+        originalKeyword: 'coconut',
+        description: '코코넛 + 음료키워드 → 코코넛밀크'
+      },
+      
       // 오렌지 관련 주스 패턴들
       {
-        pattern: /오렌지.*?(100%|주스|juice|JUICE|ml|mL|ML|리터|L|l)/i,
+        pattern: /(오렌지|ORANGE|orange).*?(100%|주스|juice|JUICE|ml|mL|ML|리터|L|l)/i,
         result: '오렌지주스',
         originalKeyword: 'orange',
         description: '오렌지 + 주스관련키워드 → 오렌지주스'
@@ -229,7 +579,7 @@ const FoodDetectionApp = () => {
       
       // 사과 관련 주스 패턴들  
       {
-        pattern: /사과.*?(100%|주스|juice|JUICE|ml|mL|ML|리터|L|l)/i,
+        pattern: /(사과|APPLE|apple).*?(100%|주스|juice|JUICE|ml|mL|ML|리터|L|l)/i,
         result: '사과주스',
         originalKeyword: 'apple',
         description: '사과 + 주스관련키워드 → 사과주스'
@@ -237,7 +587,7 @@ const FoodDetectionApp = () => {
       
       // 토마토 관련 주스 패턴들
       {
-        pattern: /토마토.*?(100%|주스|juice|JUICE|ml|mL|ML|리터|L|l)/i,
+        pattern: /(토마토|TOMATO|tomato).*?(100%|주스|juice|JUICE|ml|mL|ML|리터|L|l)/i,
         result: '토마토주스',
         originalKeyword: 'tomato', 
         description: '토마토 + 주스관련키워드 → 토마토주스'
@@ -245,7 +595,7 @@ const FoodDetectionApp = () => {
       
       // 포도 관련 주스 패턴들
       {
-        pattern: /포도.*?(100%|주스|juice|JUICE|ml|mL|ML|리터|L|l)/i,
+        pattern: /(포도|GRAPE|grape).*?(100%|주스|juice|JUICE|ml|mL|ML|리터|L|l)/i,
         result: '포도주스',
         originalKeyword: 'grape',
         description: '포도 + 주스관련키워드 → 포도주스'
@@ -253,7 +603,7 @@ const FoodDetectionApp = () => {
       
       // 바나나 우유 패턴들
       {
-        pattern: /바나나.*?(우유|milk|MILK)/i,
+        pattern: /(바나나|BANANA|banana).*?(우유|milk|MILK|ml|mL|ML)/i,
         result: '바나나우유',
         originalKeyword: 'banana',
         description: '바나나 + 우유 → 바나나우유'
@@ -261,7 +611,7 @@ const FoodDetectionApp = () => {
       
       // 딸기 우유 패턴들
       {
-        pattern: /딸기.*?(우유|milk|MILK)/i,
+        pattern: /(딸기|STRAWBERRY|strawberry).*?(우유|milk|MILK|ml|mL|ML)/i,
         result: '딸기우유',
         originalKeyword: 'strawberry',
         description: '딸기 + 우유 → 딸기우유'
@@ -269,7 +619,7 @@ const FoodDetectionApp = () => {
       
       // 초콜릿 우유 패턴들
       {
-        pattern: /초콜릿.*?(우유|milk|MILK)/i,
+        pattern: /(초콜릿|CHOCOLATE|chocolate).*?(우유|milk|MILK|ml|mL|ML)/i,
         result: '초콜릿우유',
         originalKeyword: 'chocolate',
         description: '초콜릿 + 우유 → 초콜릿우유'
@@ -277,10 +627,18 @@ const FoodDetectionApp = () => {
       
       // 복숭아 관련 주스 패턴들
       {
-        pattern: /복숭아.*?(100%|주스|juice|JUICE|ml|mL|ML|리터|L|l)/i,
+        pattern: /(복숭아|PEACH|peach).*?(100%|주스|juice|JUICE|ml|mL|ML|리터|L|l)/i,
         result: '복숭아주스',
         originalKeyword: 'peach',
         description: '복숭아 + 주스관련키워드 → 복숭아주스'
+      },
+      
+      // 일반 견과류 음료 패턴 (위의 특정 패턴에 안걸릴 경우)
+      {
+        pattern: /(견과|호두|캐슈|피스타치오).*?(ml|mL|ML|추출액|우유|milk|MILK|음료)/i,
+        result: '견과류음료',
+        originalKeyword: 'nuts',
+        description: '견과류 + 음료키워드 → 견과류음료'
       }
     ];
     
@@ -425,202 +783,327 @@ const FoodDetectionApp = () => {
     return ingredients;
   };
 
-  // 식재료 분석 실행 - 버전 10 (OCR 결과도 대시보드 추가)
+  // 🔧 수정된 식재료 분석 실행 - 중복 호출 방지 강화
   const runIngredientAnalysis = async () => {
     if (!imageFile) {
       setStatusMessage('먼저 이미지를 로드하세요.');
       return;
     }
 
-    if (isProcessing) return;
+    // 🚨 중복 실행 방지 - 이미 처리 중이면 무시
+    if (isProcessing) {
+      console.log('⚠️ 이미 분석 중입니다. 중복 실행 방지.');
+      return;
+    }
 
-    console.log('=== 버전 10: 분석 시작 ===');
+    // 🚨 추가 중복 방지 - 짧은 시간 내 연속 호출 방지
+    if (analysisTimeoutRef.current) {
+      console.log('⚠️ 짧은 시간 내 연속 호출 방지');
+      return;
+    }
+
+    // 2초간 추가 호출 방지
+    analysisTimeoutRef.current = setTimeout(() => {
+      analysisTimeoutRef.current = null;
+    }, 2000);
+
+    console.log('=== 수정된 분석 시작: Detection & OCR 병행 실행 ===');
     setIsProcessing(true);
     
     try {
-      // 1단계: Detection 시도
-      setProcessingStep('식품 탐지 중...');
-      setStatusMessage('식품 탐지 중...');
+      // 🔧 분석 전 냉장고 초기화 옵션
+      if (clearBeforeAnalysis) {
+        console.log('🧹 분석 전 냉장고 초기화');
+        setFridgeIngredients([]);
+      }
+
+      // 1단계: Detection과 OCR 병행 실행
+      setProcessingStep('식품 탐지 및 텍스트 추출 중...');
+      setStatusMessage('식품 탐지 및 텍스트 추출 중...');
 
       let detections = [];
       let ocrText = '';
+      let detectionSuccess = false;
+      let ocrSuccess = false;
       
-      try {
+      // Detection과 OCR을 병행으로 실행
+      const [detectionResult, ocrResult] = await Promise.allSettled([
         // Detection API 호출
-        const detectFormData = new FormData();
-        detectFormData.append('file', imageFile);
-        detectFormData.append('confidence', confidence);
+        (async () => {
+          try {
+            const detectFormData = new FormData();
+            detectFormData.append('file', imageFile);
+            detectFormData.append('confidence', confidence);
 
-        const detectResponse = await fetch(`${API_BASE_URL}/api/detect`, {
-          method: 'POST',
-          body: detectFormData,
-        });
+            const detectResponse = await fetch(`${API_BASE_URL}/api/detect`, {
+              method: 'POST',
+              body: detectFormData,
+            });
 
-        if (detectResponse.ok) {
-          const result = await detectResponse.json();
-          console.log('Detection 성공:', result);
-          setDetectionResults(result);
-          detections = result.detections || [];
-        } else {
-          console.log('Detection 실패, Mock 데이터 사용');
-          // Mock Detection 데이터
-          detections = [
-            { class: 'apple', confidence: 0.85 },
-            { class: 'apple', confidence: 0.78 },
-            { class: 'banana', confidence: 0.92 },
-            { class: 'carrot', confidence: 0.81 }
-          ];
-          setDetectionResults({ detections });
-        }
-      } catch (error) {
-        console.log('Detection API 오류, Mock 데이터 사용');
-        detections = [
-          { class: 'apple', confidence: 0.85 },
-          { class: 'banana', confidence: 0.92 },
-          { class: 'carrot', confidence: 0.81 }
-        ];
-        setDetectionResults({ detections });
+            if (detectResponse.ok) {
+              const result = await detectResponse.json();
+              console.log('✅ Detection API 성공:', result);
+              setDetectionResults(result);
+              detections = result.detections || [];
+              return { success: true, data: detections };
+            } else {
+              throw new Error(`Detection API 실패: ${detectResponse.status}`);
+            }
+          } catch (error) {
+            console.log('❌ Detection API 오류:', error.message);
+            return { success: false, error: error.message };
+          }
+        })(),
+        
+        // OCR API 호출
+        (async () => {
+          try {
+            const ocrFormData = new FormData();
+            ocrFormData.append('file', imageFile);
+
+            const ocrResponse = await fetch(`${API_BASE_URL}/api/ocr`, {
+              method: 'POST',
+              body: ocrFormData,
+            });
+
+            if (ocrResponse.ok) {
+              const result = await ocrResponse.json();
+              console.log('✅ OCR API 성공:', result);
+              const text = result.text || '';
+              setOcrResults(text);
+              return { success: true, data: text };
+            } else {
+              throw new Error(`OCR API 실패: ${ocrResponse.status}`);
+            }
+          } catch (error) {
+            console.log('❌ OCR API 오류:', error.message);
+            return { success: false, error: error.message };
+          }
+        })()
+      ]);
+
+      // 결과 처리
+      if (detectionResult.status === 'fulfilled' && detectionResult.value.success) {
+        detectionSuccess = true;
+        detections = detectionResult.value.data;
       }
 
-      // 2단계: OCR 시도
-      setProcessingStep('텍스트 추출 중...');
-      
-      try {
-        const ocrFormData = new FormData();
-        ocrFormData.append('file', imageFile);
-
-        const ocrResponse = await fetch(`${API_BASE_URL}/api/ocr`, {
-          method: 'POST',
-          body: ocrFormData,
-        });
-
-        if (ocrResponse.ok) {
-          const result = await ocrResponse.json();
-          console.log('OCR 성공:', result);
-          ocrText = result.text || '';
-          setOcrResults(ocrText);
-        } else {
-          console.log('OCR 실패');
-          // Mock OCR 데이터 (테스트용)
-          ocrText = '사과 2개\n바나나우유 1개\n오렌지주스';
-          setOcrResults(ocrText);
-        }
-      } catch (error) {
-        console.log('OCR API 오류');
-        // Mock OCR 데이터 (테스트용)
-        ocrText = '토마토 3개\n양파 1개';
-        setOcrResults(ocrText);
+      if (ocrResult.status === 'fulfilled' && ocrResult.value.success) {
+        ocrSuccess = true;
+        ocrText = ocrResult.value.data;
       }
 
-      // 3단계: 결과 처리
+      // 2단계: 결과 처리 로직 (수정된 부분)
       setProcessingStep('결과 처리 중...');
       
       let finalIngredients = [];
+      let processingMethod = '';
 
-      // OCR 텍스트가 있으면 OCR 우선 처리
-      if (ocrText && ocrText.trim().length > 2) {
-        console.log('OCR 우선 처리');
+      // 📌 핵심 변경: Detection과 OCR 모두 성공한 경우 OCR 우선 처리
+      if (detectionSuccess && ocrSuccess && detections.length > 0 && ocrText && ocrText.trim().length > 2) {
+        console.log('🔄 Detection과 OCR 모두 성공 → OCR 우선 처리 (대시보드용)');
+        processingMethod = 'ocr_priority';
         
-        try {
-          // Gemini 분석 시도
-          const geminiResponse = await fetch(`${API_BASE_URL}/api/analyze`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: ocrText,
-              analysis_type: 'ocr_ingredient_analysis',
-              prompt: `다음 OCR 텍스트에서 식재료를 추출하고 "식재료명 개수개" 형식으로 출력해주세요.
+        // Detection 결과는 표시만 (대시보드에 추가 안함) - processDetectionResults 호출하지 않음
+        console.log('🎯 Detection 결과는 표시만 함 (대시보드 추가 안함)');
+        
+        // OCR 결과만 대시보드에 추가
+        const hasKorean = /[가-힣]/.test(ocrText);
+        const hasEnglish = /[a-zA-Z]/.test(ocrText);
+        const hasNumbers = /\d/.test(ocrText);
+        
+        if (hasKorean || hasEnglish || hasNumbers) {
+          try {
+            // Gemini OCR 분석 - 스마트 추론
+            console.log('🧠 Gemini OCR 추론 요청 (우선 처리):', ocrText);
+            
+            const ocrAnalysisPrompt = `다음은 냉장고나 식품 관련 OCR로 추출된 텍스트입니다. 이를 분석하여 정확한 식재료나 음식 제품을 추론하고 "식재료명 개수개" 형식으로 출력해주세요.
 
-OCR 텍스트: "${ocrText}"
+OCR 추출 텍스트: "${ocrText}"
 
-🧠 스마트 분석 규칙:
-1. 과일 + 용량단위 = 주스
-   - "오렌지 + ml/L" = 오렌지주스
-   - "사과 + 200ml" = 사과주스
-   - "토마토 + juice" = 토마토주스
+🧠 스마트 추론 규칙:
+1. 식재료 + 용량/음료 키워드 = 음료로 판단
+   - "아몬드 190ml 추출액" → 아몬드우유
+   - "오렌지 100% 주스" → 오렌지주스
+   - "사과 200ml" → 사과주스  
+   - "토마토 juice" → 토마토주스
+   - "콩 추출액 ml" → 두유
 
-2. 과일 + 우유 = 우유음료
-   - "바나나 + 우유/MILK" = 바나나우유
-   - "딸기 + 우유" = 딸기우유
+2. 과일/견과류 + 우유 키워드 = 우유음료로 판단
+   - "바나나 우유" → 바나나우유
+   - "딸기 MILK" → 딸기우유
+   - "초콜릿 우유" → 초콜릿우유
+   - "아몬드 milk" → 아몬드우유
 
-3. 용량 → 개수 변환
-   - 200ml 기준 1개로 계산
-   - 500ml = 3개, 1L = 5개
+3. 용량 기반 개수 추론
+   - 200ml 이하 = 1개
+   - 500ml = 2-3개  
+   - 1L = 4-5개
 
-4. 정확한 제품명 구분
-   - 단독 과일명 = 과일 (사과 = 과일 사과)
-   - 과일 + 가공키워드 = 가공품 (오렌지주스)
+4. 브랜드명/용량 제거 후 핵심 제품명만 추출
+   - "그린덴마크 아몬드 190ml 추출액" → "아몬드우유 1개"
+   - "델몬트 오렌지 100% (210ml)" → "오렌지주스 1개"
+   - "서울우유 바나나맛 (200ml)" → "바나나우유 1개"
+
+5. ml, 추출액, 음료 키워드가 있으면 음료로 우선 판단
+   - "아몬드 추출액 95%" → "아몬드우유"
+   - "콩 추출액 ml" → "두유"
+   - "귀리 음료" → "오트밀크"
+
+6. 불분명한 경우 가장 가능성 높은 식재료로 추론
+   - "Fresh Apple" → "사과 1개"
+   - "Premium 토마토" → "토마토 1개"
 
 예시:
-입력: "오렌지 500ml 바나나 우유"
-출력: 
-오렌지주스 3개
-바나나우유 1개
+입력: "그린덴마크 아몬드 190ml 추출액 95%"
+출력: 아몬드우유 1개
 
-분석해주세요:`
-            }),
-          });
+입력: "오렌지 100% 주스 (210ml) 바나나우유 사과"
+출력:
+오렌지주스 1개
+바나나우유 1개  
+사과 1개
 
-          if (geminiResponse.ok) {
-            const geminiResult = await geminiResponse.json();
-            console.log('Gemini OCR 분석 성공:', geminiResult);
-            setGeminiResults(geminiResult.analysis || '');
+입력: "${ocrText}"
+출력:`;
+
+            const geminiOcrResult = await callGeminiAPI(ocrAnalysisPrompt);
+            console.log('✅ Gemini OCR 추론 완료 (우선 처리):', geminiOcrResult);
             
-            // Gemini 분석 결과를 파싱하여 식재료 추출
-            finalIngredients = processOCRResults(geminiResult.analysis || '');
+            setGeminiResults(`OCR 우선 처리 - Gemini 추론 결과:\n${geminiOcrResult}`);
+            
+            // Gemini 추론 결과를 파싱하여 식재료 추출 (이것만 대시보드에 추가)
+            finalIngredients = processOCRResults(geminiOcrResult);
+            setActiveTab('gemini');
+            console.log('✅ OCR 우선 처리로 대시보드에 추가된 식재료:', finalIngredients);
+            
+          } catch (geminiError) {
+            console.log('❌ Gemini OCR 추론 실패, 직접 처리로 대체');
+            console.error('Gemini 오류 상세:', geminiError);
+            
+            // Gemini 실패시 OCR 텍스트 직접 처리 (이것만 대시보드에 추가)
+            finalIngredients = processOCRResults(ocrText);
+            setGeminiResults('OCR 우선 처리 - 직접 처리 결과:\n' + finalIngredients.map(item => `${item.name} ${item.quantity}개`).join('\n'));
             setActiveTab('ocr');
-            console.log('Gemini 분석으로 추출된 식재료:', finalIngredients);
-          } else {
-            throw new Error('Gemini 실패');
+            console.log('✅ OCR 직접 처리로 대시보드에 추가된 식재료:', finalIngredients);
           }
-        } catch (error) {
-          console.log('Gemini 실패, OCR 직접 처리');
-          // Gemini 실패시 OCR 텍스트 직접 처리
-          finalIngredients = processOCRResults(ocrText);
-          setGeminiResults('OCR 직접 처리 결과:\n' + finalIngredients.map(item => `${item.name} ${item.quantity}개`).join('\n'));
-          setActiveTab('ocr');
-          console.log('OCR 직접 처리로 추출된 식재료:', finalIngredients);
         }
-      } 
-      // OCR이 없으면 Detection 처리
-      else if (detections.length > 0) {
-        console.log('Detection 처리');
-        finalIngredients = processDetectionResults(detections);
-        setGeminiResults('Detection 한글 변환:\n' + finalIngredients.map(item => `${item.name} ${item.quantity}개`).join('\n'));
-        setActiveTab('detection');
-        console.log('Detection으로 추출된 식재료:', finalIngredients);
+      }
+      // Detection만 성공한 경우
+      else if (detectionSuccess && detections.length > 0) {
+        console.log('🎯 Detection만 성공 → Detection 처리');
+        processingMethod = 'detection';
+        
+        try {
+          finalIngredients = await processDetectionResults(detections, currentImage);
+          if (finalIngredients && finalIngredients.length > 0) {
+            setGeminiResults('Detection Gemini 번역:\n' + finalIngredients.map(item => `${item.name} ${item.quantity}개`).join('\n'));
+            setActiveTab('detection');
+            console.log('✅ Detection으로 대시보드에 추가된 식재료:', finalIngredients);
+          } else {
+            console.log('⚠️ Detection 처리 결과가 비어있음');
+            finalIngredients = [];
+          }
+        } catch (detectionError) {
+          console.error('❌ Detection 처리 중 오류:', detectionError);
+          finalIngredients = [];
+        }
+      }
+      // OCR만 성공한 경우
+      else if (ocrSuccess && ocrText && ocrText.trim().length > 2) {
+        console.log('📄 OCR만 성공 → OCR 처리');
+        processingMethod = 'ocr';
+        
+        const hasKorean = /[가-힣]/.test(ocrText);
+        const hasEnglish = /[a-zA-Z]/.test(ocrText);
+        const hasNumbers = /\d/.test(ocrText);
+        
+        if (hasKorean || hasEnglish || hasNumbers) {
+          try {
+            const ocrAnalysisPrompt = `다음은 냉장고나 식품 관련 OCR로 추출된 텍스트입니다. 이를 분석하여 정확한 식재료나 음식 제품을 추론하고 "식재료명 개수개" 형식으로 출력해주세요.
+
+OCR 추출 텍스트: "${ocrText}"
+
+🧠 스마트 추론 규칙:
+1. 식재료 + 용량/음료 키워드 = 음료로 판단
+   - "아몬드 190ml 추출액" → 아몬드우유
+   - "오렌지 100% 주스" → 오렌지주스
+   - "콩 추출액 ml" → 두유
+2. 과일/견과류 + 우유 키워드 = 우유음료로 판단
+3. 용량 기반 개수 추론
+4. 브랜드명/용량 제거 후 핵심 제품명만 추출
+5. ml, 추출액, 음료 키워드가 있으면 음료로 우선 판단
+6. 불분명한 경우 가장 가능성 높은 식재료로 추론
+
+입력: "${ocrText}"
+출력:`;
+
+            const geminiOcrResult = await callGeminiAPI(ocrAnalysisPrompt);
+            console.log('✅ Gemini OCR 추론 완료:', geminiOcrResult);
+            
+            setGeminiResults(`Gemini OCR 추론 결과:\n${geminiOcrResult}`);
+            
+            finalIngredients = processOCRResults(geminiOcrResult);
+            setActiveTab('ocr');
+            console.log('✅ OCR로 대시보드에 추가된 식재료:', finalIngredients);
+            
+          } catch (geminiError) {
+            console.log('❌ Gemini OCR 추론 실패, 직접 처리로 대체');
+            finalIngredients = processOCRResults(ocrText);
+            setGeminiResults('OCR 직접 처리 결과:\n' + finalIngredients.map(item => `${item.name} ${item.quantity}개`).join('\n'));
+            setActiveTab('ocr');
+            console.log('✅ OCR 직접 처리로 대시보드에 추가된 식재료:', finalIngredients);
+          }
+        }
       }
 
-      // 4단계: 냉장고에 추가
+      // 둘 다 실패하면 에러 메시지 표시
+      if (finalIngredients.length === 0) {
+        console.log('❌ Detection과 OCR 모두 실패 또는 결과 없음');
+        
+        if (!detectionSuccess && !ocrSuccess) {
+          setStatusMessage('❌ 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.');
+        } else if (!detectionSuccess && ocrSuccess) {
+          setStatusMessage('❌ Detection API 실패. OCR은 성공했지만 추출된 식재료가 없습니다.');
+        } else if (detectionSuccess && !ocrSuccess) {
+          setStatusMessage('❌ OCR API 실패. Detection 결과가 표시됩니다.');
+        } else {
+          setStatusMessage('❌ 분석된 식재료가 없습니다.');
+        }
+      }
+
+      // 3단계: 냉장고에 추가 - 중복 방지 강화
       if (finalIngredients.length > 0) {
-        console.log('냉장고에 추가:', finalIngredients);
-        addToFridge(finalIngredients);
+        console.log('🧊 냉장고에 추가 시작:', finalIngredients);
+        
+        // 한 번만 호출되도록 보장
+        setTimeout(() => {
+          addToFridge(finalIngredients);
+        }, 100);
         
         // 소스별 개수 계산
-        const ocrCount = finalIngredients.filter(item => item.source === 'ocr').length;
+        const ocrCount = finalIngredients.filter(item => item.source === 'ocr' || item.source === 'ocr_smart').length;
         const detectionCount = finalIngredients.filter(item => item.source === 'detection').length;
         
         let sourceText = '';
-        if (ocrCount > 0 && detectionCount > 0) {
-          sourceText = ` (OCR: ${ocrCount}개, 탐지: ${detectionCount}개)`;
-        } else if (ocrCount > 0) {
-          sourceText = ` (OCR 분석)`;
-        } else if (detectionCount > 0) {
-          sourceText = ` (탐지 분석)`;
+        if (processingMethod === 'ocr_priority') {
+          sourceText = ` (OCR 우선 처리: ${ocrCount}개, Detection 표시만)`;
+        } else if (processingMethod === 'detection') {
+          sourceText = ` (Detection 분석: ${detectionCount}개)`;
+        } else if (processingMethod === 'ocr') {
+          sourceText = ` (OCR 분석: ${ocrCount}개)`;
         }
         
         setStatusMessage(`✅ 분석 완료: ${finalIngredients.length}개 식재료 추가됨${sourceText}`);
-      } else {
-        setStatusMessage('분석된 식재료가 없습니다');
       }
 
     } catch (error) {
-      console.error('분석 오류:', error);
+      console.error('❌ 전체 분석 오류:', error);
       setStatusMessage('분석 중 오류가 발생했습니다');
     } finally {
       setIsProcessing(false);
       setProcessingStep('');
-      console.log('=== 버전 10: 분석 완료 ===');
+      console.log('=== 수정된 분석 완료 ===');
     }
   };
 
@@ -775,6 +1258,30 @@ OCR 텍스트: "${ocrText}"
             </button>
           </div>
 
+          {/* 냉장고 저장 및 불러오기 버튼들 */}
+          {showSaveButton && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <button
+                onClick={saveToMongoDB}
+                disabled={isSaving || fridgeIngredients.length === 0}
+                className="flex items-center justify-center gap-2 py-3 px-4 bg-green-600 text-white rounded-lg font-medium transition-all duration-200 active:scale-95 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {isSaving ? <LoadingSpinner /> : <SaveIcon />}
+                <span className="text-sm">
+                  {isSaving ? '저장 중...' : `냉장고 저장 (${fridgeIngredients.length}종류)`}
+                </span>
+              </button>
+
+              <button
+                onClick={loadFromMongoDB}
+                className="flex items-center justify-center gap-2 py-3 px-4 bg-blue-600 text-white rounded-lg font-medium transition-all duration-200 active:scale-95 hover:bg-blue-700"
+              >
+                <CheckIcon />
+                <span className="text-sm">데이터 불러오기</span>
+              </button>
+            </div>
+          )}
+
           {/* 신뢰도 설정 */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 min-w-fit">
@@ -795,6 +1302,22 @@ OCR 텍스트: "${ocrText}"
             <span className="text-sm font-medium text-gray-600 min-w-[2.5rem] text-center">
               {confidence.toFixed(1)}
             </span>
+          </div>
+
+          {/* 분석 전 초기화 옵션 */}
+          <div className="flex items-center gap-3 pt-2 border-t border-gray-200">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={clearBeforeAnalysis}
+                onChange={(e) => setClearBeforeAnalysis(e.target.checked)}
+                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">분석 전 냉장고 초기화</span>
+            </label>
+            <div className="text-xs text-gray-500">
+              (동일 이미지 재분석 시 중복 방지)
+            </div>
           </div>
         </div>
 
@@ -909,7 +1432,7 @@ OCR 텍스트: "${ocrText}"
                           </div>
                           
                           <div className="text-xs text-gray-500 bg-white bg-opacity-70 px-2 py-1 rounded-full">
-                            {ingredient.source === 'ocr' && '📄 OCR'}
+                            {(ingredient.source === 'ocr' || ingredient.source === 'ocr_smart') && '📄 OCR'}
                             {ingredient.source === 'detection' && '🎯 탐지'}
                             {ingredient.source === 'analysis' && '🧠 AI'}
                             {ingredient.confidence && (
@@ -997,13 +1520,13 @@ OCR 텍스트: "${ocrText}"
                     {detectionResults ? (
                       <div className="space-y-2">
                         <div className="text-xs text-gray-600 mb-2">
-                          총 {detectionResults.detections?.length || 0}개 탐지
+                          총 {detectionResults.detections?.length || 0}개 탐지 (표시만, 대시보드 추가 안됨)
                         </div>
                         {detectionResults.detections?.map((detection, index) => (
                           <div key={index} className="p-2 bg-gray-50 rounded-lg">
                             <div className="flex justify-between items-center">
                               <span className="text-sm font-medium text-blue-600">
-                                {detection.class} → {translateToKorean(detection.class)}
+                                {detection.class}
                               </span>
                               <span className="text-xs font-semibold px-2 py-1 rounded-full bg-green-100 text-green-700">
                                 {(detection.confidence * 100).toFixed(1)}%
