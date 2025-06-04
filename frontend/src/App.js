@@ -122,6 +122,9 @@ const FoodDetectionApp = () => {
     },
     '동양제과': {
       '과자류': ['초코하임', '요하임']
+    },
+    '남양': {
+      '음료류': ['초코에몽 프로틴']
     }
   };
 
@@ -1110,6 +1113,7 @@ const FoodDetectionApp = () => {
     'asparagus': '아스파라거스',
     'kale': '케일',
     'sweet potato': '고구마',
+    'bell_pepper': '피망',
     'pumpkin': '호박'
   };
 
@@ -1355,7 +1359,9 @@ const FoodDetectionApp = () => {
     }
   };
 
-  // 저장/불러오기 함수들
+  // ===== 수정된 저장/불러오기 함수들 =====
+  
+  // 백엔드 호환성을 맞춘 saveToMongoDB 함수
   const saveToMongoDB = async () => {
     if (fridgeIngredients.length === 0) {
       setStatusMessage('저장할 식재료가 없습니다.');
@@ -1365,13 +1371,23 @@ const FoodDetectionApp = () => {
     setIsSaving(true);
 
     try {
+      // 백엔드 Ingredient 모델에 맞춰 필수 필드들 포함
       const saveData = {
         userId: userId,
-        ingredients: fridgeIngredients,
+        ingredients: fridgeIngredients.map(ingredient => ({
+          id: ingredient.id,
+          name: ingredient.name,
+          quantity: ingredient.quantity || 1,  // 백엔드 필수 필드
+          confidence: ingredient.confidence || 0.8,
+          source: ingredient.source || "manual"  // 백엔드 필수 필드
+        })),
         timestamp: new Date().toISOString(),
         totalCount: fridgeIngredients.reduce((sum, item) => sum + item.quantity, 0),
         totalTypes: fridgeIngredients.length
+        // createdAt은 백엔드에서 자동 처리하므로 제외
       };
+
+      console.log('백엔드 호환 데이터 저장:', saveData);
 
       const saveResponse = await fetch(`${API_BASE_URL}/api/fridge/save`, {
         method: 'POST',
@@ -1383,6 +1399,7 @@ const FoodDetectionApp = () => {
 
       if (saveResponse.ok) {
         const result = await saveResponse.json();
+        console.log('✅ 서버 저장 성공:', result);
         setStatusMessage(`✅ 냉장고 데이터가 성공적으로 저장되었습니다! (총 ${fridgeIngredients.length}종류)`);
         setShowSaveButton(false);
         
@@ -1390,28 +1407,69 @@ const FoodDetectionApp = () => {
           setStatusMessage('저장 완료');
         }, 3000);
       } else {
-        const errorData = await saveResponse.json();
-        throw new Error(errorData.message || '저장 실패');
+        // 422 오류 상세 정보 로깅
+        const errorText = await saveResponse.text();
+        console.error(`❌ 저장 API 오류 (${saveResponse.status}):`, errorText);
+        throw new Error(`저장 실패 (${saveResponse.status}): ${errorText}`);
       }
     } catch (error) {
       console.error('❌ MongoDB 저장 실패:', error);
       
       try {
+        // 로컬 저장 시에는 간소화된 형식 사용
         const localData = {
           userId: userId,
-          ingredients: fridgeIngredients,
-          timestamp: new Date().toISOString(),
-          totalCount: fridgeIngredients.reduce((sum, item) => sum + item.quantity, 0),
-          totalTypes: fridgeIngredients.length
+          createdAt: new Date().toISOString(),
+          ingredients: fridgeIngredients.map(ingredient => ({
+            id: ingredient.id,
+            name: ingredient.name,
+            confidence: ingredient.confidence || 0.8
+          })),
+          timestamp: new Date().toISOString()
         };
         
-        setStatusMessage(`📱 로컬에 저장되었습니다 (총 ${fridgeIngredients.length}종류) - 서버 연결 실패`);
+        localStorage.setItem(`fridge_data_${userId}`, JSON.stringify(localData));
+        
+        setStatusMessage(`📱 로컬에 저장되었습니다 (총 ${fridgeIngredients.length}종류) - 서버: ${error.message}`);
         setShowSaveButton(false);
       } catch (localError) {
         setStatusMessage(`❌ 저장 실패: ${error.message}`);
       }
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // 수정된 loadFromMongoDB 함수 - 불러온 데이터를 현재 앱 형식에 맞게 변환
+  const loadFromMongoDB = async () => {
+    try {
+      const loadResponse = await fetch(`${API_BASE_URL}/api/fridge/load/${userId}`);
+
+      if (loadResponse.ok) {
+        const result = await loadResponse.json();
+        
+        if (result.ingredients && result.ingredients.length > 0) {
+          // 불러온 데이터를 현재 앱 형식에 맞게 변환
+          const convertedIngredients = result.ingredients.map((ingredient, index) => ({
+            id: ingredient.id || (Date.now() + index),
+            name: ingredient.name,
+            quantity: ingredient.quantity || 1, // 기본값 1로 설정
+            confidence: ingredient.confidence || 0.8,
+            source: ingredient.source || 'loaded' // 기본값 'loaded'로 설정
+          }));
+          
+          setFridgeIngredients(convertedIngredients);
+          setStatusMessage(`📥 저장된 데이터를 불러왔습니다 (${convertedIngredients.length}종류)`);
+          setShowSaveButton(false);
+        } else {
+          setStatusMessage('저장된 데이터가 없습니다.');
+        }
+      } else {
+        throw new Error('데이터 로드 실패');
+      }
+    } catch (error) {
+      console.error('❌ MongoDB 로드 실패:', error);
+      setStatusMessage('저장된 데이터가 없습니다.');
     }
   };
 
@@ -1604,29 +1662,6 @@ const FoodDetectionApp = () => {
     } catch (error) {
       console.error('❌ 로컬 버전3 데이터 로드 실패:', error);
       setStatusMessage('❌ 로컬 버전3 데이터 불러오기에 실패했습니다.');
-    }
-  };
-
-  const loadFromMongoDB = async () => {
-    try {
-      const loadResponse = await fetch(`${API_BASE_URL}/api/fridge/load/${userId}`);
-
-      if (loadResponse.ok) {
-        const result = await loadResponse.json();
-        
-        if (result.ingredients && result.ingredients.length > 0) {
-          setFridgeIngredients(result.ingredients);
-          setStatusMessage(`📥 저장된 데이터를 불러왔습니다 (${result.totalTypes}종류, ${result.totalCount}개)`);
-          setShowSaveButton(false);
-        } else {
-          setStatusMessage('저장된 데이터가 없습니다.');
-        }
-      } else {
-        throw new Error('데이터 로드 실패');
-      }
-    } catch (error) {
-      console.error('❌ MongoDB 로드 실패:', error);
-      setStatusMessage('저장된 데이터가 없습니다.');
     }
   };
 

@@ -104,6 +104,18 @@ class FridgeData(BaseModel):
     class Config:
         from_attributes = True
 
+# ===== 간소화된 데이터 모델 (사용자 요구사항에 맞춤) =====
+class SimpleIngredient(BaseModel):
+    id: int
+    name: str
+    quantity: int
+    confidence: float
+    source: str
+
+class SimpleFridgeData(BaseModel):
+    userId: str
+    ingredients: List[SimpleIngredient]
+
 # ===== 버전3 데이터 마이그레이션 관련 모델 =====
 class V3IngredientData(BaseModel):
     """버전3 호환 식재료 데이터 모델"""
@@ -164,7 +176,7 @@ def load_ensemble_models():
     model_paths = {
         'yolo11s': 'models/yolo11s.pt',
         'best': 'models/best.pt',
-        'best_friged': 'models/best_friged.pt'  # 새로 추가된 세 번째 모델
+        'best_friged': 'models/best_fri.pt'  # 새로 추가된 세 번째 모델
     }
     
     print("🤖 3가지 YOLO 앙상블 모델 로딩 중...")
@@ -340,9 +352,9 @@ def detect_objects_ensemble(models, image_path, confidence=0.5, ensemble_weights
     # 3가지 모델에 최적화된 앙상블 가중치 설정
     if ensemble_weights is None:
         ensemble_weights = {
-            'yolo11s': 1.2,      # 범용 모델 기준
-            'best': 1.0,         # 커스텀 학습 모델 (가장 높은 가중치)
-            'best_friged': 0.8   # 냉장고 특화 모델 (중간 가중치)
+            'yolo11s': 1.0,      # 범용 모델 기준
+            'best': 1.1,         # 커스텀 학습 모델 (가장 높은 가중치)
+            'best_friged': 0.9   # 냉장고 특화 모델 (중간 가중치)
         }
     
     # 앙상블 수행
@@ -753,6 +765,81 @@ async def save_fridge_data(fridge_data: FridgeData):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"저장 중 오류 발생: {str(e)}")
 
+# ===== 간소화된 저장 API 엔드포인트 =====
+
+@app.post("/api/fridge/save-simple")
+async def save_simple_fridge_data(fridge_data: SimpleFridgeData):
+    """간소화된 형식으로 냉장고 식재료 데이터를 MongoDB에 저장"""
+    if fridge_collection is None:
+        raise HTTPException(status_code=503, detail="MongoDB가 연결되지 않았습니다")
+    
+    try:
+        print(f"💾 간소화된 냉장고 데이터 저장 시작 - 사용자: {fridge_data.userId}")
+        print(f"🗄️ 저장 위치: {DB_NAME}.{COLLECTION_NAME}")
+        
+        # Pydantic V2 호환: model_dump() 사용
+        ingredients_dict = [ingredient.model_dump() for ingredient in fridge_data.ingredients]
+        
+        # MongoDB 연결 상태 확인
+        try:
+            await client.admin.command('ping')
+            print("✅ MongoDB 연결 상태 정상")
+        except Exception as conn_err:
+            print(f"❌ MongoDB 연결 확인 실패: {conn_err}")
+            raise HTTPException(status_code=503, detail="MongoDB 연결이 불안정합니다")
+        
+        # 간소화된 데이터 저장 (사용자가 원하는 형식만)
+        current_time = datetime.now().isoformat()
+        
+        # $setOnInsert에는 새 문서 생성 시에만 설정할 필드들
+        insert_only_document = {
+            "createdAt": current_time
+        }
+        
+        # $set에는 업데이트할 필드들 (createdAt 제외)
+        update_document = {
+            "userId": fridge_data.userId,
+            "ingredients": ingredients_dict,
+            "updatedAt": current_time
+        }
+        
+        result = await fridge_collection.update_one(
+            {"userId": fridge_data.userId},
+            {
+                "$set": update_document,
+                "$setOnInsert": insert_only_document
+            },
+            upsert=True
+        )
+        
+        print(f"✅ 간소화된 MongoDB 저장 완료")
+        print(f"   - 사용자: {fridge_data.userId}")
+        print(f"   - 식재료: {len(fridge_data.ingredients)}개")
+        print(f"   - 신규 생성: {result.upserted_id is not None}")
+        print(f"   - 저장된 필드: userId, ingredients, createdAt")
+        
+        return {
+            "success": True,
+            "message": f"간소화된 냉장고 데이터가 {DB_NAME}.{COLLECTION_NAME}에 성공적으로 저장되었습니다",
+            "userId": fridge_data.userId,
+            "totalIngredients": len(fridge_data.ingredients),
+            "isNew": result.upserted_id is not None,
+            "storage": {
+                "database": DB_NAME,
+                "collection": COLLECTION_NAME,
+                "documentId": str(result.upserted_id) if result.upserted_id else "updated",
+                "format": "simplified"
+            },
+            "savedFields": ["userId", "ingredients", "createdAt"]
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ 간소화된 MongoDB 저장 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"간소화된 저장 중 오류 발생: {str(e)}")
+
 @app.get("/api/fridge/load/{user_id}")
 async def load_fridge_data(user_id: str):
     """MongoDB에서 사용자별 냉장고 데이터 불러오기"""
@@ -801,6 +888,52 @@ async def load_fridge_data(user_id: str):
         print(f"❌ MongoDB 로드 오류: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"데이터 로드 중 오류 발생: {str(e)}")
+
+# 간소화된 불러오기 API
+@app.get("/api/fridge/load-simple/{user_id}")
+async def load_simple_fridge_data(user_id: str):
+    """간소화된 형식으로 사용자별 냉장고 데이터 불러오기"""
+    if fridge_collection is None:
+        raise HTTPException(status_code=503, detail="MongoDB가 연결되지 않았습니다")
+    
+    try:
+        print(f"📥 간소화된 냉장고 데이터 로드 시작 - 사용자: {user_id}")
+        
+        # MongoDB에서 사용자 데이터 검색
+        fridge_data = await fridge_collection.find_one({"userId": user_id})
+        
+        if not fridge_data:
+            print(f"⚠️ 데이터 없음 - 사용자: {user_id}")
+            return {
+                "success": False,
+                "message": "저장된 냉장고 데이터가 없습니다",
+                "ingredients": []
+            }
+        
+        # _id 필드 제거 (JSON 직렬화를 위해)
+        fridge_data.pop("_id", None)
+        
+        # 간소화된 형식으로 반환 (필요한 필드만)
+        simplified_data = {
+            "userId": fridge_data.get("userId"),
+            "ingredients": fridge_data.get("ingredients", []),
+            "createdAt": fridge_data.get("createdAt")
+        }
+        
+        print(f"✅ 간소화된 MongoDB 로드 완료")
+        print(f"   - 사용자: {user_id}")
+        print(f"   - 식재료: {len(simplified_data['ingredients'])}개")
+        
+        return {
+            "success": True,
+            "message": f"간소화된 데이터를 {DB_NAME}.{COLLECTION_NAME}에서 성공적으로 불러왔습니다",
+            **simplified_data
+        }
+    
+    except Exception as e:
+        print(f"❌ 간소화된 MongoDB 로드 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"간소화된 데이터 로드 중 오류 발생: {str(e)}")
 
 # ===== 버전3 데이터 마이그레이션 API =====
 
@@ -987,7 +1120,7 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "3.0.0 - 3-Model Ensemble + V3 Migration",
+        "version": "3.0.0 - 3-Model Ensemble + V3 Migration + Simple Save",
         "services": {
             "ensemble_models": {
                 "target_models": ["yolo11s", "best", "best_friged"],
@@ -1000,7 +1133,8 @@ async def health_check():
             "mongodb": mongodb_status,
             "ocr": "configured" if os.environ.get('CLOVA_OCR_API_URL') else "not_configured",
             "gemini": "configured" if os.environ.get('GEMINI_API_KEY') else "not_configured",
-            "v3_migration": "available"
+            "v3_migration": "available",
+            "simple_save": "available"
         },
         "mongodb_config": {
             "database": DB_NAME,
@@ -1013,13 +1147,14 @@ async def health_check():
             "V3 데이터 마이그레이션 지원",
             "3가지 YOLO 모델 앙상블",
             "커스텀 가중치 앙상블",
-            "MongoDB 냉장고 데이터 관리"
+            "MongoDB 냉장고 데이터 관리",
+            "간소화된 저장 형식 지원 (/api/fridge/save-simple)"
         ]
     }
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 3-Model Ensemble Food Detection API + V3 Migration 서버 시작 중...")
+    print("🚀 3-Model Ensemble Food Detection API + V3 Migration + Simple Save 서버 시작 중...")
     print(f"📍 서버 주소: http://0.0.0.0:8000")
     print(f"📋 API 문서: http://0.0.0.0:8000/docs")
     print(f"🤖 타겟 앙상블 모델: yolo11s.pt, best.pt, best_friged.pt")
@@ -1027,6 +1162,7 @@ if __name__ == "__main__":
     print(f"🔗 MongoDB 연결: {'✅ 성공' if fridge_collection is not None else '❌ 실패'}")
     print(f"🗄️ 저장 위치: {DB_NAME}.{COLLECTION_NAME}")
     print(f"🔄 V3 마이그레이션: ✅ 지원됨")
+    print(f"💾 간소화된 저장: ✅ /api/fridge/save-simple")
     if len(ensemble_models) < 3:
         print(f"⚠️ 경고: 3개 모델 중 {len(ensemble_models)}개만 로드됨")
     uvicorn.run(app, host="0.0.0.0", port=8000)
