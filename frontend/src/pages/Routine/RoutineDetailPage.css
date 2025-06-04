@@ -1,0 +1,87 @@
+/* src/pages/Routine/RoutineDetailPage.css */
+
+.routine-detail-page-content {
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.routine-detail-description {
+  font-size: 1rem;
+  color: #666;
+  text-align: center;
+  margin-bottom: 2rem;
+  line-height: 1.5;
+}
+
+.exercise-list-title {
+  font-size: 1.6rem;
+  color: #333;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  width: 100%;
+}
+
+.exercise-list {
+  width: 100%;
+  max-width: 450px;
+  list-style: none; /* 기본 리스트 스타일 제거 */
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem; /* 운동 항목 간 간격 */
+}
+
+.exercise-item {
+  background-color: #f8f9fa; /* 연한 회색 배경 */
+  border: 1px solid #e9ecef;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.03);
+}
+
+.exercise-item h4 {
+  font-size: 1.15rem;
+  color: #343a40;
+  margin-bottom: 0.4rem;
+}
+
+.exercise-item p {
+  font-size: 0.9rem;
+  color: #6c757d;
+  margin-bottom: 0.2rem;
+}
+
+.exercise-notes {
+  font-size: 0.85rem;
+  color: #dc3545; /* 경고성 색상 */
+  font-style: italic;
+  margin-top: 0.5rem;
+}
+
+.start-exercise-button {
+  background-color: #007bff; /* 주 버튼 색상 */
+  color: white;
+  padding: 0.8rem 1.5rem;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  margin-top: 2.5rem; /* 버튼 상단 간격 */
+  width: 100%;
+  max-width: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.start-exercise-button:hover {
+  background-color: #0056b3;
+}
