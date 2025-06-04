@@ -216,6 +216,22 @@ const WorkoutRoutine = () => {
     }
   };
 
+  const handleCompleteRoutine = async () => {
+    try {
+      const result = await workoutService.completeRoutine(selectedDay, userId);
+      alert(`루틴 완료! 현재 진행도: ${result.progress}, 레벨: ${result.level}`);
+
+      // 루틴 리셋 API 호출
+      await workoutService.resetUserRoutines(userId);
+
+      // 루틴/진행상황 다시 불러오기
+      fetchRoutines();
+    } catch (err) {
+      alert('아직 완료되지 않은 세트가 있습니다!');
+    }
+  };
+    
+
   
 
   const handleEditSet = async (exerciseId, setId, field, value) => {
@@ -302,6 +318,8 @@ const WorkoutRoutine = () => {
 <button onClick={handleReset} style={{marginBottom: '1rem', backgroundColor: '#ef4444', color: 'white', padding: '0.5rem 1rem', borderRadius: '0.5rem', border: 'none', cursor: 'pointer'}}>
   루틴 리셋
 </button>
+
+
 
   const handleDeleteExercise = async (exerciseId) => {
     try {
@@ -552,6 +570,22 @@ const WorkoutRoutine = () => {
               </div>
             ))}
           </div>
+          <button
+            onClick={handleCompleteRoutine}
+            style={{
+              marginTop: '2rem',
+              backgroundColor: '#10b981',
+              color: 'white',
+              padding: '0.75rem 1.5rem',
+              borderRadius: '0.5rem',
+              border: 'none',
+              fontSize: '1rem',
+              fontWeight: 'bold',
+              cursor: 'pointer'
+            }}
+          >
+            루틴 완료
+          </button>
         </div>
       )}
     </div>

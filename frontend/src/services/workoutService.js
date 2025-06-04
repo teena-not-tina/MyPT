@@ -34,6 +34,15 @@ class WorkoutService {
     return await response.json();
   }
 
+  // workoutService.js
+  async completeRoutine(day, userId) {
+    const response = await fetch(`${API_BASE_URL}/api/workout/routines/${day}/complete?user_id=${userId}`, {
+      method: 'POST'
+    });
+    if (!response.ok) throw new Error('Failed to complete routine');
+    return await response.json();
+  }
+
   async updateSet(day, exerciseId, setId, updateData) {
     try {
       const response = await fetch(

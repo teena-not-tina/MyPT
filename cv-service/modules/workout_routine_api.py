@@ -335,7 +335,7 @@ async def copy_default_routines_for_user(
         raise HTTPException(status_code=404, detail="No default routines found")
 
 
-# 루틴 리셋 (user_id 기준)
+# 루틴 리셋 (user_id 기준
 @router.post("/routines/user/{user_id}/reset")
 async def reset_user_routines(
     user_id: int,
@@ -350,3 +350,50 @@ async def reset_user_routines(
         {"$set": {"exercises.$[].sets.$[].completed": False}}
     )
     return {"message": "User routines reset"}
+
+# 루틴 완료시, 유저 progress, level 업데이트
+@router.post("/routines/{day}/complete")
+async def complete_routine(
+    day: int,
+    user_id: int = Query(...),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    # 1. 모든 세트가 완료되었는지 확인
+    routine = await db.routines.find_one({"day": day, "user_id": user_id})
+    if not routine:
+        raise HTTPException(status_code=404, detail="Routine not found")
+
+    all_completed = all(
+        set_item.get("completed", False)
+        for exercise in routine["exercises"]
+        for set_item in exercise["sets"]
+    )
+    if not all_completed:
+        raise HTTPException(status_code=400, detail="Not all sets are completed")
+
+    # 2. users 컬렉션에서 user_id로 progress, level 업데이트
+    user = await db.users.find_one({"user_id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    progress = user.get("progress", 0)
+    level = user.get("level", 1)
+
+    if progress >= 3:
+        # 4번째 루틴 완료 시 progress 0, level +1
+        new_progress = 0
+        new_level = level + 1
+    else:
+        new_progress = progress + 1
+        new_level = level
+
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$set": {"progress": new_progress, "level": new_level}}
+    )
+
+    return {
+        "message": "Routine completed, progress updated",
+        "progress": new_progress,
+        "level": new_level
+    }
