@@ -1,5 +1,4 @@
 import React from "react";
-import { Container, Typography, Box } from "@mui/material";
 
 /**
  * MainPage shown after login.
@@ -7,13 +6,31 @@ import { Container, Typography, Box } from "@mui/material";
  */
 export default function MainPage() {
   return (
-    <Container maxWidth="md" sx={{ minHeight: "100vh", py: 5 }}>
-      <Box sx={{ textAlign: "center", mt: 10 }}>
-        <Typography variant="h4">메인 페이지</Typography>
-        <Typography variant="body1" sx={{ mt: 2 }}>
+    <div style={{
+      maxWidth: '768px',
+      margin: '0 auto',
+      minHeight: '100vh',
+      padding: '2.5rem 1rem'
+    }}>
+      <div style={{
+        textAlign: 'center',
+        marginTop: '5rem'
+      }}>
+        <h1 style={{
+          fontSize: '2rem',
+          fontWeight: 'bold',
+          marginBottom: '1rem'
+        }}>
+          메인 페이지
+        </h1>
+        <p style={{
+          fontSize: '1rem',
+          color: '#6b7280',
+          marginTop: '1rem'
+        }}>
           로그인 성공! (여기서 챗봇 페이지로 이동하도록 변경 예정)
-        </Typography>
-      </Box>
-    </Container>
+        </p>
+      </div>
+    </div>
   );
 }

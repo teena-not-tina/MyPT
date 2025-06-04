@@ -1,0 +1,27 @@
+cv-service:
+  build: ./cv-service
+  ports:
+    - "8001:8001"
+  environment:
+    - MONGO_URL=mongodb://mongodb:27017  # Use 'mongodb' as the hostname in Docker
+    - MONGO_DB=test
+  depends_on:
+    - mongodb
+  networks:
+    - app-network
+
+mongodb:
+  image: mongo:latest
+  ports:
+    - "27017:27017"
+  volumes:
+    - mongo-data:/data/db
+  networks:
+    - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  mongo-data:

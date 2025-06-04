@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, MoreVertical, Plus, Trash2, Edit2, Check, X } from 'lucide-react';
 import ExerciseAnalyzer from './ExerciseAnalyzer';
+import workoutService from '../../services/workoutService';
 
 // Exercise enum for supported exercises
 const Exercise = {
@@ -27,7 +28,7 @@ const WorkoutRoutine = () => {
   const [showAnalyzer, setShowAnalyzer] = useState(false);
   const [selectedExercise, setSelectedExercise] = useState(null);
 
-  // Styles
+  // Styles (same as before)
   const styles = {
     container: {
       maxWidth: '896px',
@@ -160,60 +161,6 @@ const WorkoutRoutine = () => {
     }
   };
 
-  // Mock data
-  const mockRoutines = [
-    {
-      day: 1,
-      title: "1일차 - 하체 & 힙 집중",
-      exercises: [
-        { id: 1, name: "워밍업: 러닝머신 빠르게 걷기", sets: [{ id: 1, time: "5분", completed: false }] },
-        { id: 2, name: "스미스머신 스쿼트", sets: [{ id: 1, reps: 12, weight: 20, completed: false }, { id: 2, reps: 12, weight: 20, completed: false }, { id: 3, reps: 12, weight: 20, completed: false }] },
-        { id: 3, name: "레그프레스", sets: [{ id: 1, reps: 12, weight: 50, completed: false }, { id: 2, reps: 12, weight: 50, completed: false }, { id: 3, reps: 12, weight: 50, completed: false }] },
-        { id: 4, name: "런지 (덤벨 들고)", sets: [{ id: 1, reps: 10, weight: 5, completed: false }, { id: 2, reps: 10, weight: 5, completed: false }, { id: 3, reps: 10, weight: 5, completed: false }] },
-        { id: 5, name: "레그컬 (누워서 하는 거)", sets: [{ id: 1, reps: 12, weight: 20, completed: false }, { id: 2, reps: 12, weight: 20, completed: false }, { id: 3, reps: 12, weight: 20, completed: false }] },
-        { id: 6, name: "힙 어브덕션 머신", sets: [{ id: 1, reps: 15, weight: 30, completed: false }, { id: 2, reps: 15, weight: 30, completed: false }, { id: 3, reps: 15, weight: 30, completed: false }] },
-        { id: 7, name: "마무리: 천국의계단", sets: [{ id: 1, time: "10-15분", completed: false }] }
-      ]
-    },
-    {
-      day: 2,
-      title: "2일차 - 상체 & 복부",
-      exercises: [
-        { id: 8, name: "워밍업: 러닝머신", sets: [{ id: 1, time: "5분", completed: false }] },
-        { id: 9, name: "랫풀다운", sets: [{ id: 1, reps: 12, weight: 15, completed: false }, { id: 2, reps: 12, weight: 15, completed: false }, { id: 3, reps: 12, weight: 15, completed: false }] },
-        { id: 10, name: "시티드로우", sets: [{ id: 1, reps: 12, weight: 20, completed: false }, { id: 2, reps: 12, weight: 20, completed: false }, { id: 3, reps: 12, weight: 20, completed: false }] },
-        { id: 11, name: "덤벨 숄더프레스", sets: [{ id: 1, reps: 12, weight: 4, completed: false }, { id: 2, reps: 12, weight: 4, completed: false }, { id: 3, reps: 12, weight: 4, completed: false }] },
-        { id: 12, name: "케이블 트라이셉스 푸시다운", sets: [{ id: 1, reps: 15, weight: 15, completed: false }, { id: 2, reps: 15, weight: 15, completed: false }, { id: 3, reps: 15, weight: 15, completed: false }] },
-        { id: 13, name: "복부운동 (플랭크 + 크런치 + 레그레이즈)", sets: [{ id: 1, time: "30초 + 15회 + 15회", completed: false }, { id: 2, time: "30초 + 15회 + 15회", completed: false }, { id: 3, time: "30초 + 15회 + 15회", completed: false }] }
-      ]
-    },
-    {
-      day: 3,
-      title: "3일차 - 하체 & 힙 + 유산소",
-      exercises: [
-        { id: 14, name: "워밍업: 러닝머신", sets: [{ id: 1, time: "5분", completed: false }] },
-        { id: 15, name: "불가리안 스플릿 스쿼트", sets: [{ id: 1, reps: 10, weight: 4, completed: false }, { id: 2, reps: 10, weight: 4, completed: false }, { id: 3, reps: 10, weight: 4, completed: false }] },
-        { id: 16, name: "데드리프트", sets: [{ id: 1, reps: 12, weight: 20, completed: false }, { id: 2, reps: 12, weight: 20, completed: false }, { id: 3, reps: 12, weight: 20, completed: false }] },
-        { id: 17, name: "힙 쓰러스트 머신", sets: [{ id: 1, reps: 12, weight: 30, completed: false }, { id: 2, reps: 12, weight: 30, completed: false }, { id: 3, reps: 12, weight: 30, completed: false }] },
-        { id: 18, name: "케이블 킥백", sets: [{ id: 1, reps: 15, weight: 10, completed: false }, { id: 2, reps: 15, weight: 10, completed: false }, { id: 3, reps: 15, weight: 10, completed: false }] },
-        { id: 19, name: "천국의계단", sets: [{ id: 1, time: "15-20분", completed: false }] }
-      ]
-    },
-    {
-      day: 4,
-      title: "4일차 - 상체 & 복부 + 전신",
-      exercises: [
-        { id: 20, name: "워밍업: 러닝머신", sets: [{ id: 1, time: "5분", completed: false }] },
-        { id: 21, name: "체스트프레스", sets: [{ id: 1, reps: 12, weight: 25, completed: false }, { id: 2, reps: 12, weight: 25, completed: false }, { id: 3, reps: 12, weight: 25, completed: false }] },
-        { id: 22, name: "어깨 레터럴레이즈", sets: [{ id: 1, reps: 15, weight: 4, completed: false }, { id: 2, reps: 15, weight: 4, completed: false }, { id: 3, reps: 15, weight: 4, completed: false }] },
-        { id: 23, name: "원암 덤벨로우", sets: [{ id: 1, reps: 12, weight: 8, completed: false }, { id: 2, reps: 12, weight: 8, completed: false }, { id: 3, reps: 12, weight: 8, completed: false }] },
-        { id: 24, name: "케이블 우드쵸퍼", sets: [{ id: 1, reps: 15, weight: 15, completed: false }, { id: 2, reps: 15, weight: 15, completed: false }, { id: 3, reps: 15, weight: 15, completed: false }] },
-        { id: 25, name: "버피테스트", sets: [{ id: 1, reps: 10, completed: false }, { id: 2, reps: 10, completed: false }, { id: 3, reps: 10, completed: false }] },
-        { id: 26, name: "마무리: 러닝머신", sets: [{ id: 1, time: "10분", completed: false }] }
-      ]
-    }
-  ];
-
   useEffect(() => {
     fetchRoutines();
   }, []);
@@ -221,124 +168,140 @@ const WorkoutRoutine = () => {
   const fetchRoutines = async () => {
     try {
       setLoading(true);
-      setRoutines(mockRoutines);
+      setError(null);
+      console.log('Fetching routines...');
+      const data = await workoutService.getAllRoutines();
+      console.log('Received data:', data);
+      setRoutines(data);
       setLoading(false);
     } catch (err) {
       setError('운동 루틴을 불러오는데 실패했습니다.');
       setLoading(false);
+      console.error('Failed to fetch routines:', err);
     }
   };
 
   const currentRoutine = routines.find(r => r.day === selectedDay);
 
   const handleCompleteSet = async (exerciseId, setId) => {
-    setRoutines(prev => prev.map(routine => {
-      if (routine.day === selectedDay) {
-        return {
-          ...routine,
-          exercises: routine.exercises.map(exercise => {
-            if (exercise.id === exerciseId) {
-              return {
-                ...exercise,
-                sets: exercise.sets.map(set => {
-                  if (set.id === setId) {
-                    return { ...set, completed: !set.completed };
-                  }
-                  return set;
-                })
-              };
-            }
-            return exercise;
-          })
-        };
-      }
-      return routine;
-    }));
+    try {
+      await workoutService.toggleSetCompletion(selectedDay, exerciseId, setId);
+      
+      // Update local state optimistically
+      setRoutines(prev => prev.map(routine => {
+        if (routine.day === selectedDay) {
+          return {
+            ...routine,
+            exercises: routine.exercises.map(exercise => {
+              if (exercise.id === exerciseId) {
+                return {
+                  ...exercise,
+                  sets: exercise.sets.map(set => {
+                    if (set.id === setId) {
+                      return { ...set, completed: !set.completed };
+                    }
+                    return set;
+                  })
+                };
+              }
+              return exercise;
+            })
+          };
+        }
+        return routine;
+      }));
+    } catch (err) {
+      console.error('Failed to toggle set completion:', err);
+      // Optionally show error message to user
+    }
   };
 
   const handleEditSet = async (exerciseId, setId, field, value) => {
-    setRoutines(prev => prev.map(routine => {
-      if (routine.day === selectedDay) {
-        return {
-          ...routine,
-          exercises: routine.exercises.map(exercise => {
-            if (exercise.id === exerciseId) {
-              return {
-                ...exercise,
-                sets: exercise.sets.map(set => {
-                  if (set.id === setId) {
-                    return { ...set, [field]: value };
-                  }
-                  return set;
-                })
-              };
-            }
-            return exercise;
-          })
-        };
-      }
-      return routine;
-    }));
+    try {
+      const updateData = { [field]: value };
+      await workoutService.updateSet(selectedDay, exerciseId, setId, updateData);
+      
+      // Update local state
+      setRoutines(prev => prev.map(routine => {
+        if (routine.day === selectedDay) {
+          return {
+            ...routine,
+            exercises: routine.exercises.map(exercise => {
+              if (exercise.id === exerciseId) {
+                return {
+                  ...exercise,
+                  sets: exercise.sets.map(set => {
+                    if (set.id === setId) {
+                      return { ...set, [field]: value };
+                    }
+                    return set;
+                  })
+                };
+              }
+              return exercise;
+            })
+          };
+        }
+        return routine;
+      }));
+    } catch (err) {
+      console.error('Failed to update set:', err);
+    }
   };
 
   const handleAddSet = async (exerciseId) => {
-    const exercise = currentRoutine.exercises.find(e => e.id === exerciseId);
-    const lastSet = exercise.sets[exercise.sets.length - 1];
-    const newSet = {
-      id: Math.max(...exercise.sets.map(s => s.id)) + 1,
-      ...Object.keys(lastSet).reduce((acc, key) => {
-        if (key !== 'id' && key !== 'completed') {
-          acc[key] = lastSet[key];
-        }
-        return acc;
-      }, {}),
-      completed: false
-    };
-
-    setRoutines(prev => prev.map(routine => {
-      if (routine.day === selectedDay) {
-        return {
-          ...routine,
-          exercises: routine.exercises.map(ex => {
-            if (ex.id === exerciseId) {
-              return { ...ex, sets: [...ex.sets, newSet] };
-            }
-            return ex;
-          })
-        };
-      }
-      return routine;
-    }));
+    try {
+      const result = await workoutService.addSet(selectedDay, exerciseId);
+      
+      // Refresh routines to get the new set with proper ID from backend
+      await fetchRoutines();
+    } catch (err) {
+      console.error('Failed to add set:', err);
+    }
   };
 
   const handleDeleteSet = async (exerciseId, setId) => {
-    setRoutines(prev => prev.map(routine => {
-      if (routine.day === selectedDay) {
-        return {
-          ...routine,
-          exercises: routine.exercises.map(ex => {
-            if (ex.id === exerciseId) {
-              return { ...ex, sets: ex.sets.filter(s => s.id !== setId) };
-            }
-            return ex;
-          })
-        };
-      }
-      return routine;
-    }));
+    try {
+      await workoutService.deleteSet(selectedDay, exerciseId, setId);
+      
+      // Update local state
+      setRoutines(prev => prev.map(routine => {
+        if (routine.day === selectedDay) {
+          return {
+            ...routine,
+            exercises: routine.exercises.map(ex => {
+              if (ex.id === exerciseId) {
+                return { ...ex, sets: ex.sets.filter(s => s.id !== setId) };
+              }
+              return ex;
+            })
+          };
+        }
+        return routine;
+      }));
+    } catch (err) {
+      console.error('Failed to delete set:', err);
+    }
   };
 
   const handleDeleteExercise = async (exerciseId) => {
-    setRoutines(prev => prev.map(routine => {
-      if (routine.day === selectedDay) {
-        return {
-          ...routine,
-          exercises: routine.exercises.filter(ex => ex.id !== exerciseId)
-        };
-      }
-      return routine;
-    }));
-    setEditingExercise(null);
+    try {
+      await workoutService.deleteExercise(selectedDay, exerciseId);
+      
+      // Update local state
+      setRoutines(prev => prev.map(routine => {
+        if (routine.day === selectedDay) {
+          return {
+            ...routine,
+            exercises: routine.exercises.filter(ex => ex.id !== exerciseId)
+          };
+        }
+        return routine;
+      }));
+      setEditingExercise(null);
+    } catch (err) {
+      console.error('Failed to delete exercise:', err);
+    }
   };
 
   const handleCameraClick = async (exerciseName) => {
@@ -346,8 +309,14 @@ const WorkoutRoutine = () => {
       console.log(`Exercise ${exerciseName} is not supported for posture analysis`);
       return;
     }
-    setSelectedExercise(exerciseName);
-    setShowAnalyzer(true);
+    
+    try {
+      await workoutService.triggerPostureAnalysis(exerciseName);
+      setSelectedExercise(exerciseName);
+      setShowAnalyzer(true);
+    } catch (err) {
+      console.error('Failed to trigger posture analysis:', err);
+    }
   };
 
   if (showAnalyzer) {
@@ -385,6 +354,20 @@ const WorkoutRoutine = () => {
         <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '0.75rem 1rem', borderRadius: '0.25rem' }}>
           {error}
         </div>
+        <button 
+          onClick={fetchRoutines}
+          style={{
+            marginTop: '1rem',
+            padding: '0.5rem 1rem',
+            backgroundColor: '#3b82f6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '0.5rem',
+            cursor: 'pointer'
+          }}
+        >
+          다시 시도
+        </button>
       </div>
     );
   }

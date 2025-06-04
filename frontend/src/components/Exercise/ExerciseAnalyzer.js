@@ -1,284 +1,388 @@
-// ExerciseAnalyzer.js (The Frontend)
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { Camera, CameraOff, RotateCcw, ArrowLeft } from 'lucide-react';
 
-// What it does: The React component users see - shows webcam, feedback, rep counter
-// Think of it as: The UI that users interact with
-// To use: Import into your React app
-
-import React, { useState, useRef, useEffect } from 'react';
-import Webcam from 'react-webcam';
-import axios from 'axios';
-
-const ExerciseAnalyzer = () => {
-  const [selectedExercise, setSelectedExercise] = useState('PUSHUP');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+const ExerciseAnalyzer = ({ exerciseName, targetReps = 10, onComplete, onBack }) => {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCameraOn, setIsCameraOn] = useState(false);
   const [feedback, setFeedback] = useState(null);
   const [repCount, setRepCount] = useState(0);
-  const [useWebcam, setUseWebcam] = useState(true);
-  const [wsConnection, setWsConnection] = useState(null);
-  const [annotatedFrame, setAnnotatedFrame] = useState(null);
+  const [error, setError] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
   
-  const webcamRef = useRef(null);
-  const fileInputRef = useRef(null);
+  const poseRef = useRef(null);
+  const cameraRef = useRef(null);
+  const wsRef = useRef(null);
+  const animationIdRef = useRef(null);
+  const lastSendTimeRef = useRef(0);
   
-  const exercises = [
-    { id: 'PUSHUP', name: '푸시업', description: 'Push-up' },
-    { id: 'SQUAT', name: '스쿼트', description: 'Squat' },
-    { id: 'LEG_RAISE', name: '레그레이즈', description: 'Leg Raise' },
-    { id: 'DUMBBELL_CURL', name: '덤벨컬', description: 'Dumbbell Curl' },
-    { id: 'ONE_ARM_ROW', name: '원암덤벨로우', description: 'One-arm Dumbbell Row' },
-    { id: 'PLANK', name: '플랭크', description: 'Plank' }
-  ];
-
-  // WebSocket setup for real-time analysis
+  // Initialize MediaPipe Pose
   useEffect(() => {
-    if (isAnalyzing && useWebcam) {
-      const ws = new WebSocket('ws://localhost:8001/exercise/live-analysis');
+    const initializePose = async () => {
+      try {
+        setIsLoading(true);
+        
+        // Load MediaPipe Pose
+        const pose = new window.Pose({
+          locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+          }
+        });
+        
+        pose.setOptions({
+          modelComplexity: 1,
+          smoothLandmarks: true,
+          enableSegmentation: false,
+          smoothSegmentation: false,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+        
+        pose.onResults(onPoseResults);
+        poseRef.current = pose;
+        
+        setIsLoading(false);
+      } catch (err) {
+        console.error('Failed to initialize MediaPipe:', err);
+        setError('Failed to load pose detection');
+        setIsLoading(false);
+      }
+    };
+    
+    // Load MediaPipe scripts
+    const script1 = document.createElement('script');
+    script1.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js';
+    script1.crossOrigin = 'anonymous';
+    
+    const script2 = document.createElement('script');
+    script2.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js';
+    script2.crossOrigin = 'anonymous';
+    
+    const script3 = document.createElement('script');
+    script3.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js';
+    script3.crossOrigin = 'anonymous';
+    
+    const script4 = document.createElement('script');
+    script4.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js';
+    script4.crossOrigin = 'anonymous';
+    
+    document.head.appendChild(script1);
+    document.head.appendChild(script2);
+    document.head.appendChild(script3);
+    document.head.appendChild(script4);
+    
+    script4.onload = () => {
+      initializePose();
+    };
+    
+    return () => {
+      document.head.removeChild(script1);
+      document.head.removeChild(script2);
+      document.head.removeChild(script3);
+      document.head.removeChild(script4);
+    };
+  }, []);
+  
+  // WebSocket connection
+  useEffect(() => {
+    if (!isCameraOn) return;
+    
+    const connectWebSocket = () => {
+      const ws = new WebSocket('ws://localhost:8001/api/workout/ws/analyze');
       
       ws.onopen = () => {
         console.log('WebSocket connected');
-        setWsConnection(ws);
+        setIsConnected(true);
+        
+        // Send initial exercise info
+        ws.send(JSON.stringify({
+          type: 'init',
+          exercise: exerciseName,
+          targetReps: targetReps
+        }));
       };
       
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        console.log('Received WebSocket data:', data.type, data);
         
         if (data.type === 'feedback') {
-          if (data.feedback) {
-            setFeedback(data.feedback);
-            if (data.feedback.angles && data.feedback.angles.rep_count !== undefined) {
-              setRepCount(data.feedback.angles.rep_count);
-            }
+          setFeedback(data.feedback);
+          if (data.repCount !== undefined) {
+            setRepCount(data.repCount);
           }
-          // Update annotated frame if available
-          if (data.annotated_frame) {
-            console.log('Received annotated frame, size:', data.annotated_frame.length);
-            setAnnotatedFrame('data:image/jpeg;base64,' + data.annotated_frame);
+          
+          // Check if exercise complete
+          if (data.isComplete && onComplete) {
+            onComplete();
           }
-        } else if (data.type === 'error') {
-          console.error('WebSocket error from server:', data.message);
         }
       };
       
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
+        setError('Connection error');
       };
       
       ws.onclose = () => {
         console.log('WebSocket disconnected');
-        setWsConnection(null);
+        setIsConnected(false);
       };
       
-      return () => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.close();
-        }
-      };
-    }
-  }, [isAnalyzing, useWebcam]);
-
-  // Send frames to WebSocket
-  useEffect(() => {
-    if (isAnalyzing && wsConnection && webcamRef.current) {
-      const interval = setInterval(() => {
-        const imageSrc = webcamRef.current.getScreenshot();
-        if (imageSrc && wsConnection.readyState === WebSocket.OPEN) {
-          // Remove data:image/jpeg;base64, prefix
-          const base64Data = imageSrc.split(',')[1];
-          
-          console.log('Sending frame to WebSocket, size:', base64Data.length);
-          wsConnection.send(JSON.stringify({
-            type: 'frame',
-            exercise: selectedExercise,
-            data: base64Data
-          }));
-        }
-      }, 200); // Reduced frequency to 5 FPS to reduce load
-      
-      return () => clearInterval(interval);
-    }
-  }, [isAnalyzing, wsConnection, selectedExercise]);
-
-  const handleStartStop = () => {
-    if (isAnalyzing) {
-      setIsAnalyzing(false);
-      if (wsConnection) {
-        wsConnection.close();
+      wsRef.current = ws;
+    };
+    
+    connectWebSocket();
+    
+    return () => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.close();
       }
-    } else {
-      setIsAnalyzing(true);
-      setFeedback(null);
-      setRepCount(0);
+    };
+  }, [isCameraOn, exerciseName, targetReps, onComplete]);
+  
+  // Process pose results
+  const onPoseResults = useCallback((results) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw the video
+    ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+    
+    if (results.poseLandmarks) {
+      // Draw landmarks and connections
+      window.drawConnectors(ctx, results.poseLandmarks, window.POSE_CONNECTIONS, {
+        color: '#00FF00',
+        lineWidth: 4
+      });
+      
+      window.drawLandmarks(ctx, results.poseLandmarks, {
+        color: '#FF0000',
+        lineWidth: 2,
+        radius: 6
+      });
+      
+      // Send landmarks to backend (throttled)
+      const now = Date.now();
+      if (wsRef.current && 
+          wsRef.current.readyState === WebSocket.OPEN && 
+          now - lastSendTimeRef.current > 100) { // Send max 10 times per second
+        
+        wsRef.current.send(JSON.stringify({
+          type: 'landmarks',
+          landmarks: results.poseLandmarks,
+          timestamp: now
+        }));
+        
+        lastSendTimeRef.current = now;
+      }
     }
-  };
-
-  const handleReset = () => {
-    setRepCount(0);
-    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
-      wsConnection.send(JSON.stringify({ type: 'reset' }));
-    }
-  };
-
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('exercise', selectedExercise);
-
+    
+    ctx.restore();
+  }, []);
+  
+  // Start camera
+  const startCamera = async () => {
     try {
-      const response = await axios.post(
-        'http://localhost:8001/exercise/analyze-video',
-        formData,
-        {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          params: { output_format: 'json' }
-        }
-      );
-
-      if (response.data.success) {
-        console.log('Video analysis results:', response.data);
-        // You could display the results in a modal or separate component
-        alert(`Analysis complete! Total reps: ${response.data.final_rep_count}`);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 }
+      });
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        
+        const camera = new window.Camera(videoRef.current, {
+          onFrame: async () => {
+            if (poseRef.current && videoRef.current) {
+              await poseRef.current.send({ image: videoRef.current });
+            }
+          },
+          width: 640,
+          height: 480
+        });
+        
+        camera.start();
+        cameraRef.current = camera;
+        setIsCameraOn(true);
+        setError(null);
       }
-    } catch (error) {
-      console.error('Error analyzing video:', error);
-      alert('Error analyzing video. Please try again.');
+    } catch (err) {
+      console.error('Camera error:', err);
+      setError('카메라 접근 권한이 필요합니다');
     }
   };
-
-  const getFeedbackColor = () => {
-    if (!feedback) return 'gray';
-    return feedback.is_correct ? 'green' : 'red';
+  
+  // Stop camera
+  const stopCamera = () => {
+    if (cameraRef.current) {
+      cameraRef.current.stop();
+      cameraRef.current = null;
+    }
+    
+    if (videoRef.current && videoRef.current.srcObject) {
+      const tracks = videoRef.current.srcObject.getTracks();
+      tracks.forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    
+    setIsCameraOn(false);
   };
-
+  
+  // Reset exercise
+  const resetExercise = () => {
+    setRepCount(0);
+    setFeedback(null);
+    
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'reset' }));
+    }
+  };
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopCamera();
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []);
+  
   return (
-    <div className="exercise-analyzer">
-      <h2>Exercise Posture Analyzer</h2>
-      
-      {/* Exercise Selection */}
-      <div className="exercise-selection">
-        <h3>Select Exercise:</h3>
-        <div className="exercise-buttons">
-          {exercises.map((exercise) => (
-            <button
-              key={exercise.id}
-              onClick={() => setSelectedExercise(exercise.id)}
-              className={selectedExercise === exercise.id ? 'selected' : ''}
-            >
-              {exercise.name}
-              <small>{exercise.description}</small>
-            </button>
-          ))}
+    <div className="max-w-4xl mx-auto p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onBack}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <ArrowLeft size={24} />
+          </button>
+          <h2 className="text-2xl font-bold">{exerciseName} 자세 분석</h2>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <button
+            onClick={resetExercise}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            disabled={!isCameraOn}
+          >
+            <RotateCcw size={20} />
+          </button>
+          
+          <button
+            onClick={isCameraOn ? stopCamera : startCamera}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              isCameraOn 
+                ? 'bg-red-500 hover:bg-red-600 text-white' 
+                : 'bg-blue-500 hover:bg-blue-600 text-white'
+            }`}
+            disabled={isLoading}
+          >
+            {isCameraOn ? (
+              <>
+                <CameraOff className="inline mr-2" size={20} />
+                카메라 끄기
+              </>
+            ) : (
+              <>
+                <Camera className="inline mr-2" size={20} />
+                카메라 켜기
+              </>
+            )}
+          </button>
         </div>
       </div>
-
-      {/* Input Mode Selection */}
-      <div className="input-mode">
-        <label>
-          <input
-            type="radio"
-            checked={useWebcam}
-            onChange={() => setUseWebcam(true)}
+      
+      {/* Status bar */}
+      <div className="mb-4 p-3 bg-gray-100 rounded-lg flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+            isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+          }`}>
+            {isConnected ? '● 연결됨' : '● 연결 안됨'}
+          </span>
+          
+          <span className="text-lg font-medium">
+            횟수: <span className="text-blue-600">{repCount}</span> / {targetReps}
+          </span>
+        </div>
+        
+        {/* Progress bar */}
+        <div className="w-48 bg-gray-200 rounded-full h-2">
+          <div 
+            className="bg-blue-500 h-2 rounded-full transition-all"
+            style={{ width: `${Math.min((repCount / targetReps) * 100, 100)}%` }}
           />
-          Webcam (Real-time)
-        </label>
-        <label>
-          <input
-            type="radio"
-            checked={!useWebcam}
-            onChange={() => setUseWebcam(false)}
-          />
-          Upload Video
-        </label>
+        </div>
       </div>
-
-      {/* Main Content Area */}
-      <div className="analysis-area">
-        {useWebcam ? (
-          <>
-            <div className="webcam-container">
-              {/* Hidden webcam for capturing frames */}
-              <Webcam
-                ref={webcamRef}
-                screenshotFormat="image/jpeg"
-                width={640}
-                height={480}
-                className={isAnalyzing && annotatedFrame ? "webcam-hidden" : "webcam-feed"}
-              />
-              
-              {/* Show annotated frame when analyzing */}
-              {isAnalyzing && annotatedFrame && (
-                <img 
-                  src={annotatedFrame}
-                  alt="Exercise Analysis with Landmarks"
-                  width={640}
-                  height={480}
-                  className="webcam-feed annotated-overlay"
-                />
-              )}
-              
-              {/* Overlay for feedback */}
-              {isAnalyzing && feedback && (
-                <div className="feedback-overlay">
-                  <div className={`status ${getFeedbackColor()}`}>
-                    {feedback.is_correct ? '✓ Good Form!' : '⚠ Adjust Form'}
-                  </div>
-                  <div className="rep-counter">
-                    Reps: {repCount}
-                  </div>
-                </div>
-              )}
+      
+      {/* Video/Canvas container */}
+      <div className="relative bg-black rounded-lg overflow-hidden" style={{ aspectRatio: '4/3' }}>
+        <video
+          ref={videoRef}
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ display: 'none' }}
+          playsInline
+        />
+        
+        <canvas
+          ref={canvasRef}
+          width={640}
+          height={480}
+          className="w-full h-full"
+        />
+        
+        {!isCameraOn && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center text-white">
+              <Camera size={48} className="mx-auto mb-4 opacity-50" />
+              <p className="text-lg">카메라를 켜서 운동을 시작하세요</p>
             </div>
-            
-            <div className="controls">
-              <button onClick={handleStartStop} className="primary-button">
-                {isAnalyzing ? 'Stop Analysis' : 'Start Analysis'}
-              </button>
-              {isAnalyzing && (
-                <button onClick={handleReset} className="secondary-button">
-                  Reset Count
-                </button>
-              )}
+          </div>
+        )}
+        
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+            <div className="text-white text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+              <p>포즈 감지 로딩 중...</p>
             </div>
-          </>
-        ) : (
-          <div className="file-upload-area">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="video/*"
-              onChange={handleFileUpload}
-              style={{ display: 'none' }}
-            />
-            <button 
-              onClick={() => fileInputRef.current.click()}
-              className="upload-button"
-            >
-              📹 Upload Video for Analysis
-            </button>
           </div>
         )}
       </div>
-
-      {/* Feedback Messages */}
-      {feedback && feedback.messages.length > 0 && (
-        <div className="feedback-messages">
-          <h4>Feedback:</h4>
-          <ul>
-            {feedback.messages.map((msg, index) => (
-              <li key={index}>{msg}</li>
-            ))}
-          </ul>
+      
+      {/* Feedback panel */}
+      {feedback && isCameraOn && (
+        <div className={`mt-4 p-4 rounded-lg ${
+          feedback.isCorrect ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'
+        }`}>
+          <h3 className={`font-bold mb-2 ${
+            feedback.isCorrect ? 'text-green-800' : 'text-yellow-800'
+          }`}>
+            {feedback.isCorrect ? '✓ 좋은 자세입니다!' : '⚠ 자세 교정이 필요합니다'}
+          </h3>
+          
+          {feedback.messages && feedback.messages.length > 0 && (
+            <ul className="space-y-1">
+              {feedback.messages.map((msg, idx) => (
+                <li key={idx} className="text-sm text-gray-700">
+                  • {msg}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
-
-      {/* Angle Data (for debugging or advanced users) */}
-      {feedback && feedback.angles && (
-        <div className="angle-data">
-          <h4>Technical Data:</h4>
-          <pre>{JSON.stringify(feedback.angles, null, 2)}</pre>
+      
+      {/* Error display */}
+      {error && (
+        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-red-800">{error}</p>
         </div>
       )}
     </div>
@@ -286,156 +390,3 @@ const ExerciseAnalyzer = () => {
 };
 
 export default ExerciseAnalyzer;
-
-// CSS (add to your stylesheet)
-const styles = `
-.exercise-analyzer {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.exercise-selection {
-  margin-bottom: 20px;
-}
-
-.exercise-buttons {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.exercise-buttons button {
-  padding: 10px;
-  border: 2px solid #ddd;
-  background: white;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.exercise-buttons button.selected {
-  border-color: #007bff;
-  background: #e7f1ff;
-}
-
-.exercise-buttons button small {
-  display: block;
-  font-size: 0.8em;
-  color: #666;
-}
-
-.input-mode {
-  margin-bottom: 20px;
-}
-
-.input-mode label {
-  margin-right: 20px;
-}
-
-.webcam-container {
-  position: relative;
-  display: inline-block;
-}
-
-.webcam-feed {
-  border-radius: 10px;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-}
-
-.webcam-hidden {
-  position: absolute;
-  top: -9999px;
-  left: -9999px;
-  visibility: hidden;
-}
-
-.annotated-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 2;
-}
-
-.feedback-overlay {
-  position: absolute;
-  top: 20px;
-  left: 20px;
-  right: 20px;
-  color: white;
-  text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-}
-
-.status {
-  font-size: 24px;
-  font-weight: bold;
-  margin-bottom: 10px;
-}
-
-.status.green {
-  color: #4CAF50;
-}
-
-.status.red {
-  color: #f44336;
-}
-
-.rep-counter {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  font-size: 20px;
-  background: rgba(0,0,0,0.5);
-  padding: 10px;
-  border-radius: 5px;
-}
-
-.controls {
-  margin-top: 20px;
-  text-align: center;
-}
-
-.primary-button, .secondary-button {
-  padding: 10px 20px;
-  margin: 0 10px;
-  font-size: 16px;
-  cursor: pointer;
-}
-
-.primary-button {
-  background: #007bff;
-  color: white;
-  border: none;
-  border-radius: 5px;
-}
-
-.secondary-button {
-  background: #6c757d;
-  color: white;
-  border: none;
-  border-radius: 5px;
-}
-
-.upload-button {
-  padding: 40px;
-  border: 2px dashed #ddd;
-  background: #f8f9fa;
-  cursor: pointer;
-  font-size: 18px;
-  width: 100%;
-}
-
-.feedback-messages {
-  margin-top: 20px;
-  padding: 15px;
-  background: #f8f9fa;
-  border-radius: 5px;
-}
-
-.angle-data {
-  margin-top: 20px;
-  padding: 15px;
-  background: #f0f0f0;
-  border-radius: 5px;
-  font-family: monospace;
-}
-`;
