@@ -47,6 +47,13 @@ KOREAN_CLASS_MAPPING = {
     'green onion': '대파',
     'scallion': '파',
     'leek': '리크',
+    'zuchini': '주키니호박',
+    'celery': '샐러리', 
+    'asparagus': '아스파라거스', 
+    'green onion': "대파",
+    'scallion': '파', 
+    'leek': '부추',
+            
     
     # 육류
     'beef': '소고기',
@@ -348,7 +355,8 @@ def filter_food_detections(detections, food_keywords=None):
             # 채소
             'carrot', 'broccoli', 'cabbage', 'lettuce', 'spinach', 'onion',
             'garlic', 'potato', 'tomato', 'cucumber', 'pepper', 'corn',
-            'mushroom', 'eggplant', 'radish', 'bean', 'pumpkin',
+            'mushroom', 'eggplant', 'radish', 'bean', 'pumpkin','zuchini',
+            'celery', 'asparagus', 'green onion', 'scallion', 'leek',
             
             # 단백질
             'beef', 'pork', 'chicken', 'fish', 'salmon', 'tuna', 'shrimp',

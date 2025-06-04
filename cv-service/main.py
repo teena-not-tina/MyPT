@@ -20,7 +20,7 @@ from modules.ocr_processor import extract_text_with_ocr
 from modules.gemini import analyze_text_with_gemini
 
 # FastAPI 앱 생성
-app = FastAPI(title="Food Detection API with Ensemble YOLO", version="2.0.0")
+app = FastAPI(title="Food Detection API with 3-Model Ensemble YOLO", version="3.0.0")
 
 # CORS 설정 강화
 app.add_middleware(
@@ -104,16 +104,70 @@ class FridgeData(BaseModel):
     class Config:
         from_attributes = True
 
-# ===== 앙상블 YOLO 모델 로딩 =====
+# ===== 버전3 데이터 마이그레이션 관련 모델 =====
+class V3IngredientData(BaseModel):
+    """버전3 호환 식재료 데이터 모델"""
+    name: Optional[str] = None
+    ingredient: Optional[str] = None  # 버전3에서 사용했을 수 있는 필드명
+    food: Optional[str] = None
+    foodName: Optional[str] = None
+    quantity: Optional[int] = 1
+    count: Optional[int] = None
+    amount: Optional[int] = None
+    confidence: Optional[float] = 0.5
+    source: Optional[str] = "v3_migration"
+
+def convert_v3_to_current_format(v3_data):
+    """버전3 데이터를 현재 형식으로 변환"""
+    if not v3_data:
+        return []
+    
+    converted_ingredients = []
+    
+    for idx, item in enumerate(v3_data):
+        # 다양한 형태의 버전3 데이터 처리
+        if isinstance(item, str):
+            # 단순 문자열인 경우
+            converted_ingredients.append({
+                "id": idx + 1,
+                "name": item,
+                "quantity": 1,
+                "confidence": 0.7,
+                "source": "v3_text_migration"
+            })
+        elif isinstance(item, dict):
+            # 딕셔너리인 경우 필드명 매핑
+            name = (item.get("name") or 
+                   item.get("ingredient") or 
+                   item.get("food") or 
+                   item.get("foodName") or 
+                   "알 수 없는 식재료")
+            
+            quantity = (item.get("quantity") or 
+                       item.get("count") or 
+                       item.get("amount") or 1)
+            
+            converted_ingredients.append({
+                "id": item.get("id", idx + 1),
+                "name": name,
+                "quantity": max(1, int(quantity)),
+                "confidence": item.get("confidence", 0.5),
+                "source": item.get("source", "v3_migration")
+            })
+    
+    return converted_ingredients
+
+# ===== 3가지 YOLO 모델 앙상블 =====
 def load_ensemble_models():
-    """YOLO 앙상블 모델들을 로드"""
+    """3가지 YOLO 앙상블 모델들을 로드"""
     models = {}
     model_paths = {
         'yolo11s': 'models/yolo11s.pt',
-        'best': 'models/best.pt'
+        'best': 'models/best.pt',
+        'best_friged': 'models/best_friged.pt'  # 새로 추가된 세 번째 모델
     }
     
-    print("🤖 YOLO 앙상블 모델 로딩 중...")
+    print("🤖 3가지 YOLO 앙상블 모델 로딩 중...")
     
     for model_name, model_path in model_paths.items():
         try:
@@ -130,6 +184,13 @@ def load_ensemble_models():
             print(f"❌ {model_name} 모델 로드 오류: {e}")
     
     print(f"📊 총 {len(models)}개 모델 로드 완료: {list(models.keys())}")
+    
+    # 최소 1개 모델은 필요
+    if len(models) == 0:
+        print("⚠️ 경고: 로드된 모델이 없습니다!")
+    elif len(models) < 3:
+        print(f"⚠️ 경고: 3개 모델 중 {len(models)}개만 로드됨")
+    
     return models
 
 def calculate_iou(box1, box2):
@@ -167,9 +228,13 @@ def ensemble_detections(detections_dict, iou_threshold=0.5, confidence_weights=N
     if not detections_dict:
         return []
     
-    # 기본 가중치 설정
+    # 3가지 모델에 최적화된 기본 가중치 설정
     if confidence_weights is None:
-        confidence_weights = {model_name: 1.0 for model_name in detections_dict.keys()}
+        confidence_weights = {
+            'yolo11s': 1.1,      # 범용 모델
+            'best': 1.1,         # 커스텀 학습 모델 (높은 가중치)
+            'best_friged': 0.8   # 냉장고 특화 모델 (중간 가중치)
+        }
     
     # 모든 탐지 결과를 하나의 리스트로 통합
     all_detections = []
@@ -212,13 +277,17 @@ def ensemble_detections(detections_dict, iou_threshold=0.5, confidence_weights=N
                 if 'ensemble_sources' not in kept_detection:
                     kept_detection['ensemble_sources'] = [kept_detection['model_source']]
                     kept_detection['ensemble_confidences'] = [kept_detection['original_confidence']]
+                    kept_detection['ensemble_weights'] = [kept_detection['model_weight']]
                 
                 kept_detection['ensemble_sources'].append(current_detection['model_source'])
                 kept_detection['ensemble_confidences'].append(current_detection['original_confidence'])
+                kept_detection['ensemble_weights'].append(current_detection['model_weight'])
                 
-                # 평균 신뢰도로 업데이트
-                avg_confidence = np.mean(kept_detection['ensemble_confidences'])
-                kept_detection['confidence'] = avg_confidence
+                # 가중 평균 신뢰도로 업데이트
+                weighted_sum = sum(conf * weight for conf, weight in 
+                                 zip(kept_detection['ensemble_confidences'], kept_detection['ensemble_weights']))
+                weight_sum = sum(kept_detection['ensemble_weights'])
+                kept_detection['confidence'] = weighted_sum / weight_sum if weight_sum > 0 else kept_detection['confidence']
                 kept_detection['ensemble_count'] = len(kept_detection['ensemble_sources'])
                 
                 break
@@ -227,6 +296,7 @@ def ensemble_detections(detections_dict, iou_threshold=0.5, confidence_weights=N
             # 단일 모델 탐지 정보 추가
             current_detection['ensemble_sources'] = [current_detection['model_source']]
             current_detection['ensemble_confidences'] = [current_detection['original_confidence']]
+            current_detection['ensemble_weights'] = [current_detection['model_weight']]
             current_detection['ensemble_count'] = 1
             final_detections.append(current_detection)
     
@@ -235,57 +305,73 @@ def ensemble_detections(detections_dict, iou_threshold=0.5, confidence_weights=N
         detection['ensemble_info'] = {
             'models_used': detection['ensemble_sources'],
             'individual_confidences': dict(zip(detection['ensemble_sources'], detection['ensemble_confidences'])),
+            'model_weights': dict(zip(detection['ensemble_sources'], detection['ensemble_weights'])),
             'ensemble_count': detection['ensemble_count'],
-            'final_confidence': detection['confidence']
+            'final_confidence': detection['confidence'],
+            'is_consensus': detection['ensemble_count'] >= 2  # 2개 이상 모델에서 탐지됨
         }
     
     return final_detections
 
 def detect_objects_ensemble(models, image_path, confidence=0.5, ensemble_weights=None):
-    """앙상블 모델을 사용한 객체 탐지"""
+    """3가지 앙상블 모델을 사용한 객체 탐지"""
     if not models:
         raise ValueError("로드된 모델이 없습니다")
     
-    print(f"🔍 앙상블 탐지 시작 - 모델 수: {len(models)}")
+    print(f"🔍 3가지 모델 앙상블 탐지 시작 - 모델 수: {len(models)}")
     
     # 각 모델별 탐지 결과 수집
     all_detections = {}
+    total_detections = 0
     
     for model_name, model in models.items():
         try:
             print(f"   📊 {model_name} 모델 탐지 중...")
             detections, _ = detect_objects(model, image_path, confidence)
             all_detections[model_name] = detections
+            total_detections += len(detections)
             print(f"   ✅ {model_name}: {len(detections)}개 객체 탐지")
         except Exception as e:
             print(f"   ❌ {model_name} 탐지 오류: {e}")
             all_detections[model_name] = []
+
+    print(f"📊 원본 탐지 결과: 총 {total_detections}개 객체 (앙상블 전)")
     
-    # 앙상블 가중치 설정 (best.pt에 더 높은 가중치)
+    # 3가지 모델에 최적화된 앙상블 가중치 설정
     if ensemble_weights is None:
         ensemble_weights = {
-            'yolo11s': 0.6,  # 일반적인 YOLO 모델
-            'best': 1.4      # 커스텀 훈련된 모델에 더 높은 가중치
+            'yolo11s': 1.2,      # 범용 모델 기준
+            'best': 1.0,         # 커스텀 학습 모델 (가장 높은 가중치)
+            'best_friged': 0.8   # 냉장고 특화 모델 (중간 가중치)
         }
     
     # 앙상블 수행
     final_detections = ensemble_detections(all_detections, confidence_weights=ensemble_weights)
     
-    print(f"✅ 앙상블 완료: {len(final_detections)}개 최종 객체")
+    print(f"✅ 3가지 모델 앙상블 완료: {len(final_detections)}개 최종 객체")
     
-    # 통계 정보 출력
+    # 상세 통계 정보 출력
     ensemble_stats = {}
+    consensus_count = 0
+    
     for detection in final_detections:
         count = detection['ensemble_count']
         if count not in ensemble_stats:
             ensemble_stats[count] = 0
         ensemble_stats[count] += 1
+        
+        if detection['ensemble_info']['is_consensus']:
+            consensus_count += 1
     
-    print(f"📊 앙상블 통계: {ensemble_stats}")
+    print(f"📊 앙상블 통계:")
+    print(f"   - 1개 모델 탐지: {ensemble_stats.get(1, 0)}개")
+    print(f"   - 2개 모델 합의: {ensemble_stats.get(2, 0)}개")
+    print(f"   - 3개 모델 합의: {ensemble_stats.get(3, 0)}개")
+    print(f"   - 전체 합의 객체: {consensus_count}개 ({consensus_count/len(final_detections)*100:.1f}%)")
     
     return final_detections, all_detections
 
-# YOLO 앙상블 모델 로드
+# 3가지 YOLO 앙상블 모델 로드
 ensemble_models = load_ensemble_models()
 
 # 환경 변수 확인
@@ -297,12 +383,15 @@ print(f"MONGODB_URI 설정: {bool(MONGODB_URI)}")
 @app.get("/")
 async def root():
     return {
-        "message": "Food Detection API with Ensemble YOLO Models",
+        "message": "Food Detection API with 3-Model Ensemble YOLO",
+        "version": "3.0.0",
         "status": "running",
         "ensemble_models": {
             "loaded_models": list(ensemble_models.keys()),
             "model_count": len(ensemble_models),
-            "ensemble_enabled": len(ensemble_models) > 1
+            "target_models": ["yolo11s", "best", "best_friged"],
+            "ensemble_enabled": len(ensemble_models) > 1,
+            "full_ensemble": len(ensemble_models) == 3
         },
         "mongodb_connected": fridge_collection is not None,
         "mongodb_config": {
@@ -322,7 +411,7 @@ async def root():
 
 @app.post("/api/detect")
 async def detect_food(file: UploadFile = File(...), confidence: float = 0.5, use_ensemble: bool = True):
-    """YOLO 앙상블 식품 탐지"""
+    """3가지 YOLO 앙상블 식품 탐지"""
     if not ensemble_models:
         raise HTTPException(status_code=500, detail="YOLO 모델이 로드되지 않았습니다")
     
@@ -335,17 +424,25 @@ async def detect_food(file: UploadFile = File(...), confidence: float = 0.5, use
             shutil.copyfileobj(file.file, f)
         
         if use_ensemble and len(ensemble_models) > 1:
-            print(f"🤖 앙상블 탐지 시작 (신뢰도: {confidence})")
+            print(f"🤖 3가지 모델 앙상블 탐지 시작 (신뢰도: {confidence})")
             detections, model_results = detect_objects_ensemble(ensemble_models, image_path, confidence)
+            
+            # 합의 객체와 단독 탐지 분류
+            consensus_detections = [d for d in detections if d['ensemble_info']['is_consensus']]
+            single_detections = [d for d in detections if not d['ensemble_info']['is_consensus']]
             
             response = {
                 "detections": detections,
                 "ensemble_info": {
                     "models_used": list(ensemble_models.keys()),
                     "total_detections": len(detections),
+                    "consensus_detections": len(consensus_detections),
+                    "single_detections": len(single_detections),
+                    "consensus_rate": f"{len(consensus_detections)/len(detections)*100:.1f}%" if detections else "0%",
                     "individual_results": {
                         model_name: len(results) for model_name, results in model_results.items()
-                    }
+                    },
+                    "ensemble_ready": len(ensemble_models) == 3
                 }
             }
         else:
@@ -357,7 +454,8 @@ async def detect_food(file: UploadFile = File(...), confidence: float = 0.5, use
             response = {
                 "detections": detections,
                 "model_used": model_name,
-                "ensemble_enabled": False
+                "ensemble_enabled": False,
+                "available_models": list(ensemble_models.keys())
             }
         
         print(f"✅ 탐지 완료: {len(detections)}개 객체")
@@ -376,7 +474,7 @@ async def detect_food(file: UploadFile = File(...), confidence: float = 0.5, use
 
 @app.post("/api/detect/single/{model_name}")
 async def detect_food_single_model(model_name: str, file: UploadFile = File(...), confidence: float = 0.5):
-    """특정 단일 모델로 식품 탐지"""
+    """특정 단일 모델로 식품 탐지 (3가지 모델 중 선택)"""
     if model_name not in ensemble_models:
         available_models = list(ensemble_models.keys())
         raise HTTPException(
@@ -392,10 +490,10 @@ async def detect_food_single_model(model_name: str, file: UploadFile = File(...)
         with open(image_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
         
-        print(f"🔍 {model_name} 모델 탐지 시작 (신뢰도: {confidence})")
+        print(f"🔍 {model_name} 모델 단독 탐지 시작 (신뢰도: {confidence})")
         model = ensemble_models[model_name]
         detections, _ = detect_objects(model, image_path, confidence)
-        print(f"✅ 탐지 완료: {len(detections)}개 객체")
+        print(f"✅ {model_name} 탐지 완료: {len(detections)}개 객체")
         
         try:
             os.remove(image_path)
@@ -405,39 +503,130 @@ async def detect_food_single_model(model_name: str, file: UploadFile = File(...)
         return {
             "detections": detections,
             "model_used": model_name,
-            "total_detections": len(detections)
+            "total_detections": len(detections),
+            "other_available_models": [m for m in ensemble_models.keys() if m != model_name]
         }
         
     except Exception as e:
-        print(f"❌ 탐지 오류: {e}")
+        print(f"❌ {model_name} 탐지 오류: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"탐지 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"{model_name} 탐지 오류: {str(e)}")
 
 @app.get("/api/models/info")
 async def get_models_info():
-    """로드된 모델 정보 조회"""
+    """로드된 3가지 모델 정보 조회"""
     model_info = {}
+    target_models = ["yolo11s", "best", "best_friged"]
     
-    for model_name, model in ensemble_models.items():
-        try:
-            # 모델 정보 추출 (가능한 경우)
-            model_info[model_name] = {
-                "loaded": True,
-                "model_type": str(type(model).__name__),
-                "available": True
-            }
-        except Exception as e:
+    for model_name in target_models:
+        if model_name in ensemble_models:
+            try:
+                model = ensemble_models[model_name]
+                model_info[model_name] = {
+                    "loaded": True,
+                    "model_type": str(type(model).__name__),
+                    "available": True,
+                    "status": "ready"
+                }
+            except Exception as e:
+                model_info[model_name] = {
+                    "loaded": False,
+                    "error": str(e),
+                    "available": False,
+                    "status": "error"
+                }
+        else:
             model_info[model_name] = {
                 "loaded": False,
-                "error": str(e),
-                "available": False
+                "available": False,
+                "status": "not_found",
+                "file_path": f"models/{model_name}.pt"
             }
     
     return {
+        "target_models": target_models,
         "ensemble_models": model_info,
-        "total_models": len(ensemble_models),
-        "ensemble_ready": len(ensemble_models) > 1
+        "loaded_count": len(ensemble_models),
+        "target_count": len(target_models),
+        "ensemble_ready": len(ensemble_models) > 1,
+        "full_ensemble": len(ensemble_models) == 3,
+        "missing_models": [name for name in target_models if name not in ensemble_models]
     }
+
+@app.post("/api/detect/ensemble/custom")
+async def detect_food_custom_ensemble(
+    file: UploadFile = File(...), 
+    confidence: float = 0.5,
+    yolo11s_weight: float = 1.0,
+    best_weight: float = 1.2,
+    best_friged_weight: float = 1.1,
+    iou_threshold: float = 0.5
+):
+    """커스텀 가중치로 3가지 모델 앙상블 탐지"""
+    if not ensemble_models:
+        raise HTTPException(status_code=500, detail="YOLO 모델이 로드되지 않았습니다")
+    
+    try:
+        print(f"📁 파일 업로드: {file.filename}")
+        os.makedirs("temp", exist_ok=True)
+        image_path = f"temp/{file.filename}"
+        
+        with open(image_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        
+        # 커스텀 가중치 설정
+        custom_weights = {
+            'yolo11s': yolo11s_weight,
+            'best': best_weight,
+            'best_friged': best_friged_weight
+        }
+        
+        print(f"🤖 커스텀 가중치 앙상블 탐지 시작")
+        print(f"   가중치: {custom_weights}")
+        print(f"   IoU 임계값: {iou_threshold}")
+        
+        # 각 모델별 탐지
+        all_detections = {}
+        for model_name, model in ensemble_models.items():
+            try:
+                detections, _ = detect_objects(model, image_path, confidence)
+                all_detections[model_name] = detections
+                print(f"   {model_name}: {len(detections)}개 탐지")
+            except Exception as e:
+                print(f"   {model_name} 오류: {e}")
+                all_detections[model_name] = []
+        
+        # 커스텀 앙상블 수행
+        final_detections = ensemble_detections(
+            all_detections, 
+            iou_threshold=iou_threshold, 
+            confidence_weights=custom_weights
+        )
+        
+        print(f"✅ 커스텀 앙상블 완료: {len(final_detections)}개 최종 객체")
+        
+        try:
+            os.remove(image_path)
+        except:
+            pass
+        
+        return {
+            "detections": final_detections,
+            "custom_ensemble_info": {
+                "weights_used": custom_weights,
+                "iou_threshold": iou_threshold,
+                "models_used": list(ensemble_models.keys()),
+                "total_detections": len(final_detections),
+                "individual_results": {
+                    model_name: len(results) for model_name, results in all_detections.items()
+                }
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ 커스텀 앙상블 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"커스텀 앙상블 오류: {str(e)}")
 
 # ===== 기존 API 엔드포인트들 (OCR, Gemini) =====
 
@@ -486,7 +675,7 @@ async def analyze_with_gemini(request_data: dict):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Gemini 분석 오류: {str(e)}")
 
-# ===== MongoDB 냉장고 식재료 관리 API (기존과 동일) =====
+# ===== MongoDB 냉장고 식재료 관리 API =====
 
 @app.post("/api/fridge/save")
 async def save_fridge_data(fridge_data: FridgeData):
@@ -613,6 +802,181 @@ async def load_fridge_data(user_id: str):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"데이터 로드 중 오류 발생: {str(e)}")
 
+# ===== 버전3 데이터 마이그레이션 API =====
+
+@app.get("/api/fridge/load-v3/{user_id}")
+async def load_v3_fridge_data(user_id: str):
+    """버전3에서 저장된 냉장고 데이터를 현재 형식으로 변환하여 불러오기"""
+    if fridge_collection is None:
+        raise HTTPException(status_code=503, detail="MongoDB가 연결되지 않았습니다")
+    
+    try:
+        print(f"📥 버전3 데이터 로드 시작 - 사용자: {user_id}")
+        
+        # 여러 가능한 버전3 컬렉션/필드에서 데이터 검색
+        v3_collections = [
+            f"{COLLECTION_NAME}_v3",
+            f"{COLLECTION_NAME}_old", 
+            "fridge_v3",
+            "ingredients_v3",
+            "food_data_v3"
+        ]
+        
+        v3_data = None
+        found_collection = None
+        
+        # 버전3 컬렉션들에서 데이터 검색
+        for collection_name in v3_collections:
+            try:
+                v3_collection = db[collection_name]
+                data = await v3_collection.find_one({"userId": user_id})
+                if data:
+                    v3_data = data
+                    found_collection = collection_name
+                    break
+            except Exception as e:
+                print(f"   컬렉션 {collection_name} 검색 실패: {e}")
+                continue
+        
+        # 현재 컬렉션에서 이전 형식 데이터 검색
+        if not v3_data:
+            current_data = await fridge_collection.find_one({"userId": user_id})
+            if current_data:
+                # 이미 현재 형식이면 그대로 반환
+                if "ingredients" in current_data and isinstance(current_data["ingredients"], list):
+                    if current_data["ingredients"]:
+                        print(f"✅ 현재 컬렉션에서 데이터 발견: {len(current_data['ingredients'])}개")
+                        return {
+                            "success": True,
+                            "data": current_data["ingredients"],
+                            "source": "current_format",
+                            "collection": COLLECTION_NAME,
+                            "message": "현재 형식의 데이터를 반환했습니다"
+                        }
+                
+                # 이전 형식일 수 있는 데이터 처리
+                v3_data = current_data
+                found_collection = COLLECTION_NAME
+        
+        if not v3_data:
+            return {
+                "success": False,
+                "message": "버전3 또는 이전 형식의 데이터를 찾을 수 없습니다",
+                "searched_collections": v3_collections + [COLLECTION_NAME]
+            }
+        
+        # 버전3 데이터 변환
+        v3_ingredients = None
+        
+        # 다양한 필드명에서 재료 데이터 추출
+        for field_name in ["ingredients", "data", "items", "foods", "detected_items"]:
+            if field_name in v3_data and v3_data[field_name]:
+                v3_ingredients = v3_data[field_name]
+                break
+        
+        if not v3_ingredients:
+            return {
+                "success": False,
+                "message": "버전3 데이터에서 식재료 정보를 찾을 수 없습니다",
+                "available_fields": list(v3_data.keys()),
+                "source_collection": found_collection
+            }
+        
+        # 현재 형식으로 변환
+        converted_data = convert_v3_to_current_format(v3_ingredients)
+        
+        print(f"✅ 버전3 데이터 변환 완료")
+        print(f"   - 원본: {len(v3_ingredients)}개 항목")
+        print(f"   - 변환: {len(converted_data)}개 항목") 
+        print(f"   - 출처: {found_collection}")
+        
+        return {
+            "success": True,
+            "data": converted_data,
+            "source": "v3_migration",
+            "collection": found_collection,
+            "original_count": len(v3_ingredients),
+            "converted_count": len(converted_data),
+            "message": f"버전3 데이터를 성공적으로 변환했습니다 ({found_collection})"
+        }
+        
+    except Exception as e:
+        print(f"❌ 버전3 데이터 로드 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"버전3 데이터 로드 중 오류 발생: {str(e)}")
+
+@app.post("/api/fridge/migrate-v3/{user_id}")
+async def migrate_v3_to_current(user_id: str):
+    """버전3 데이터를 찾아서 현재 형식으로 마이그레이션"""
+    if fridge_collection is None:
+        raise HTTPException(status_code=503, detail="MongoDB가 연결되지 않았습니다")
+    
+    try:
+        print(f"🔄 버전3 데이터 마이그레이션 시작 - 사용자: {user_id}")
+        
+        # 버전3 데이터 불러오기
+        v3_response = await load_v3_fridge_data(user_id)
+        
+        if not v3_response["success"]:
+            return {
+                "success": False,
+                "message": "마이그레이션할 버전3 데이터가 없습니다",
+                "details": v3_response
+            }
+        
+        converted_data = v3_response["data"]
+        
+        # 현재 형식으로 저장
+        current_time = datetime.now().isoformat()
+        
+        migration_document = {
+            "userId": user_id,
+            "ingredients": converted_data,
+            "timestamp": current_time,
+            "totalCount": sum(item["quantity"] for item in converted_data),
+            "totalTypes": len(converted_data),
+            "analysisMethod": "v3_migration",
+            "deviceInfo": "migration_tool",
+            "migrationInfo": {
+                "sourceCollection": v3_response["collection"],
+                "migrationDate": current_time,
+                "originalCount": v3_response["original_count"],
+                "convertedCount": v3_response["converted_count"]
+            },
+            "updatedAt": current_time,
+            "createdAt": current_time
+        }
+        
+        # 기존 데이터 덮어쓰기
+        result = await fridge_collection.replace_one(
+            {"userId": user_id},
+            migration_document,
+            upsert=True
+        )
+        
+        print(f"✅ 버전3 데이터 마이그레이션 완료")
+        print(f"   - 변환된 항목: {len(converted_data)}개")
+        print(f"   - 저장 위치: {DB_NAME}.{COLLECTION_NAME}")
+        
+        return {
+            "success": True,
+            "message": "버전3 데이터를 현재 형식으로 성공적으로 마이그레이션했습니다",
+            "migrationInfo": {
+                "userId": user_id,
+                "sourceCollection": v3_response["collection"],
+                "migratedItems": len(converted_data),
+                "totalCount": migration_document["totalCount"],
+                "totalTypes": migration_document["totalTypes"],
+                "targetCollection": f"{DB_NAME}.{COLLECTION_NAME}",
+                "migrationDate": current_time
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ 버전3 마이그레이션 오류: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"마이그레이션 중 오류 발생: {str(e)}")
+
 # ===== 시스템 상태 확인 API =====
 
 @app.get("/health")
@@ -623,486 +987,46 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
+        "version": "3.0.0 - 3-Model Ensemble + V3 Migration",
         "services": {
             "ensemble_models": {
+                "target_models": ["yolo11s", "best", "best_friged"],
                 "loaded_models": list(ensemble_models.keys()),
-                "total_count": len(ensemble_models),
-                "ensemble_ready": len(ensemble_models) > 1
+                "loaded_count": len(ensemble_models),
+                "target_count": 3,
+                "ensemble_ready": len(ensemble_models) > 1,
+                "full_ensemble": len(ensemble_models) == 3
             },
             "mongodb": mongodb_status,
             "ocr": "configured" if os.environ.get('CLOVA_OCR_API_URL') else "not_configured",
-            "gemini": "configured" if os.environ.get('GEMINI_API_KEY') else "not_configured"
+            "gemini": "configured" if os.environ.get('GEMINI_API_KEY') else "not_configured",
+            "v3_migration": "available"
         },
         "mongodb_config": {
             "database": DB_NAME,
             "collection": COLLECTION_NAME,
             "uri": MONGODB_URI.replace("root:example", "***:***") if MONGODB_URI else None
         },
-        "temp_dir_exists": os.path.exists("temp")
+        "temp_dir_exists": os.path.exists("temp"),
+        "missing_models": [name for name in ["yolo11s", "best", "best_friged"] if name not in ensemble_models],
+        "new_features": [
+            "V3 데이터 마이그레이션 지원",
+            "3가지 YOLO 모델 앙상블",
+            "커스텀 가중치 앙상블",
+            "MongoDB 냉장고 데이터 관리"
+        ]
     }
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Food Detection API 서버 시작 중...")
+    print("🚀 3-Model Ensemble Food Detection API + V3 Migration 서버 시작 중...")
     print(f"📍 서버 주소: http://0.0.0.0:8000")
     print(f"📋 API 문서: http://0.0.0.0:8000/docs")
-    print(f"🤖 앙상블 모델: {list(ensemble_models.keys())}")
+    print(f"🤖 타겟 앙상블 모델: yolo11s.pt, best.pt, best_friged.pt")
+    print(f"🤖 로드된 모델: {list(ensemble_models.keys())} ({len(ensemble_models)}/3)")
     print(f"🔗 MongoDB 연결: {'✅ 성공' if fridge_collection is not None else '❌ 실패'}")
     print(f"🗄️ 저장 위치: {DB_NAME}.{COLLECTION_NAME}")
+    print(f"🔄 V3 마이그레이션: ✅ 지원됨")
+    if len(ensemble_models) < 3:
+        print(f"⚠️ 경고: 3개 모델 중 {len(ensemble_models)}개만 로드됨")
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-# # cv-service/main.py 기본
-# from dotenv import load_dotenv
-# import os
-
-# # .env 파일 로드 (가장 먼저 실행)
-# load_dotenv()
-
-# from fastapi import FastAPI, UploadFile, File, HTTPException
-# from fastapi.middleware.cors import CORSMiddleware
-# import shutil
-# import traceback
-# from modules.yolo_detector import detect_objects, load_yolo_model
-# from modules.ocr_processor import extract_text_with_ocr
-# from modules.gemini import analyze_text_with_gemini
-
-# # FastAPI 앱 생성
-# app = FastAPI(title="Food Detection API", version="1.0.0")
-
-# # CORS 설정 강화
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=[
-#         "http://localhost:3000",
-#         "http://127.0.0.1:3000",
-#         "http://192.168.0.19:3000",
-#         "*"  # 개발 중에만 사용
-#     ],
-#     allow_credentials=True,
-#     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-#     allow_headers=["*"],
-# )
-
-# # YOLO 모델 로드
-# print("YOLO 모델 로딩 중...")
-# model = load_yolo_model()
-# print("✅ YOLO 모델 로드 성공" if model else "❌ YOLO 모델 로드 실패")
-
-# # 환경 변수 확인
-# print(f"CLOVA_OCR_API_URL 설정: {bool(os.environ.get('CLOVA_OCR_API_URL'))}")
-# print(f"CLOVA_SECRET_KEY 설정: {bool(os.environ.get('CLOVA_SECRET_KEY'))}")
-# print(f"GEMINI_API_KEY 설정: {bool(os.environ.get('GEMINI_API_KEY'))}")
-
-# @app.get("/")
-# async def root():
-#     return {
-#         "message": "Food Detection API",
-#         "status": "running",
-#         "model_loaded": model is not None,
-#         "env_vars": {
-#             "clova_ocr": bool(os.environ.get('CLOVA_OCR_API_URL')),
-#             "clova_secret": bool(os.environ.get('CLOVA_SECRET_KEY')),
-#             "gemini_key": bool(os.environ.get('GEMINI_API_KEY'))
-#         }
-#     }
-
-# @app.post("/api/detect")
-# async def detect_food(file: UploadFile = File(...), confidence: float = 0.5):
-#     """YOLO 식품 탐지"""
-#     if model is None:
-#         raise HTTPException(status_code=500, detail="YOLO 모델이 로드되지 않았습니다")
-    
-#     try:
-#         print(f"📁 파일 업로드: {file.filename}")
-#         os.makedirs("temp", exist_ok=True)
-#         image_path = f"temp/{file.filename}"
-        
-#         with open(image_path, "wb") as f:
-#             shutil.copyfileobj(file.file, f)
-        
-#         print(f"🔍 YOLO 탐지 시작 (신뢰도: {confidence})")
-#         detections, _ = detect_objects(model, image_path, confidence)
-#         print(f"✅ 탐지 완료: {len(detections)}개 객체")
-        
-#         try:
-#             os.remove(image_path)
-#         except:
-#             pass
-        
-#         return {"detections": detections}
-        
-#     except Exception as e:
-#         print(f"❌ 탐지 오류: {e}")
-#         traceback.print_exc()
-#         raise HTTPException(status_code=500, detail=f"탐지 오류: {str(e)}")
-
-# @app.post("/api/ocr")
-# async def extract_ocr_text(file: UploadFile = File(...)):
-#     """OCR 텍스트 추출"""
-#     try:
-#         print(f"📁 OCR 파일 업로드: {file.filename}")
-#         os.makedirs("temp", exist_ok=True)
-#         image_path = f"temp/{file.filename}"
-        
-#         with open(image_path, "wb") as f:
-#             shutil.copyfileobj(file.file, f)
-        
-#         print(f"📄 OCR 텍스트 추출 시작")
-#         ocr_text = extract_text_with_ocr(image_path)
-#         print(f"✅ OCR 완료: {len(ocr_text) if ocr_text else 0}자")
-        
-#         try:
-#             os.remove(image_path)
-#         except:
-#             pass
-        
-#         return {"text": ocr_text}
-        
-#     except Exception as e:
-#         print(f"❌ OCR 오류: {e}")
-#         traceback.print_exc()
-#         raise HTTPException(status_code=500, detail=f"OCR 오류: {str(e)}")
-
-# @app.post("/api/analyze")
-# async def analyze_with_gemini(request_data: dict):
-#     """Gemini AI 분석"""
-#     try:
-#         text = request_data.get("text", "")
-#         detection_results = request_data.get("detection_results")
-        
-#         print(f"🧠 Gemini 분석 시작 - 텍스트 길이: {len(text)}")
-#         analysis = analyze_text_with_gemini(text, detection_results)
-#         print(f"✅ Gemini 분석 완료")
-        
-#         return {"analysis": analysis}
-        
-#     except Exception as e:
-#         print(f"❌ Gemini 분석 오류: {e}")
-#         traceback.print_exc()
-#         raise HTTPException(status_code=500, detail=f"Gemini 분석 오류: {str(e)}")
-
-# # 추가 헬스체크 엔드포인트
-# @app.get("/health")
-# async def health_check():
-#     """서버 상태 확인"""
-#     return {
-#         "status": "healthy",
-#         "timestamp": os.environ.get("TZ", "UTC"),
-#         "model_status": "loaded" if model else "error",
-#         "temp_dir_exists": os.path.exists("temp")
-#     }
-
-# # 환경 변수 확인 엔드포인트 (디버깅용)
-# @app.get("/debug/env")
-# async def debug_env():
-#     """환경 변수 상태 확인 (디버깅용)"""
-#     return {
-#         "clova_ocr_url": bool(os.environ.get('CLOVA_OCR_API_URL')),
-#         "clova_secret": bool(os.environ.get('CLOVA_SECRET_KEY')),
-#         "gemini_key": bool(os.environ.get('GEMINI_API_KEY')),
-#         "working_directory": os.getcwd(),
-#         "temp_directory": os.path.exists("temp"),
-#         "model_loaded": model is not None
-#     }
-
-# if __name__ == "__main__":
-#     import uvicorn
-#     print("🚀 서버 시작 중...")
-#     print(f"📍 서버 주소: http://0.0.0.0:8000")
-#     print(f"📋 API 문서: http://0.0.0.0:8000/docs")
-#     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-# #cv-service/main.py 몽고db저장버전1
-# # MongoDB SSL 연결 오류 해결을 위한 수정된 main.py
-
-# from dotenv import load_dotenv
-# import os
-
-# # .env 파일 로드 (가장 먼저 실행)
-# load_dotenv()
-
-# from fastapi import FastAPI, UploadFile, File, HTTPException
-# from fastapi.middleware.cors import CORSMiddleware
-# from pydantic import BaseModel
-# from typing import List, Optional
-# import shutil
-# import traceback
-# import motor.motor_asyncio
-# from datetime import datetime
-# import ssl
-
-# # 기존 모듈들
-# from modules.yolo_detector import detect_objects, load_yolo_model
-# from modules.ocr_processor import extract_text_with_ocr
-# from modules.gemini import analyze_text_with_gemini
-
-# # FastAPI 앱 생성
-# app = FastAPI(title="Food Detection API", version="1.0.0")
-
-# # CORS 설정 강화
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=[
-#         "http://localhost:3000",
-#         "http://127.0.0.1:3000",
-#         "http://192.168.0.19:3000",
-#         "*"  # 개발 중에만 사용
-#     ],
-#     allow_credentials=True,
-#     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-#     allow_headers=["*"],
-# )
-
-# # MongoDB 설정 - SSL 문제 해결
-# MONGODB_URI = os.getenv("MONGODB_URI")
-# if MONGODB_URI:
-#     try:
-#         # SSL 설정을 통한 연결 개선
-#         client = motor.motor_asyncio.AsyncIOMotorClient(
-#             MONGODB_URI,
-#             # SSL 연결 문제 해결을 위한 설정들
-#             tls=True,
-#             tlsAllowInvalidCertificates=True,  # 개발 환경에서만 사용
-#             tlsAllowInvalidHostnames=True,     # 개발 환경에서만 사용
-#             serverSelectionTimeoutMS=10000,   # 타임아웃 단축
-#             connectTimeoutMS=10000,
-#             socketTimeoutMS=10000,
-#             # 재시도 설정
-#             retryWrites=True,
-#             retryReads=True,
-#             # 연결 풀 설정
-#             maxPoolSize=10,
-#             minPoolSize=1
-#         )
-        
-#         db = client.food_detection_db
-#         fridge_collection = db.fridge_data
-#         print("✅ MongoDB 연결 설정 완료")
-        
-#         # 연결 테스트를 별도로 수행
-#         async def test_connection():
-#             try:
-#                 await client.admin.command('ping')
-#                 print("✅ MongoDB 연결 테스트 성공")
-#                 return True
-#             except Exception as e:
-#                 print(f"❌ MongoDB 연결 테스트 실패: {e}")
-#                 return False
-        
-#     except Exception as e:
-#         print(f"❌ MongoDB 클라이언트 생성 실패: {e}")
-#         client = None
-#         db = None
-#         fridge_collection = None
-# else:
-#     print("⚠️ MONGODB_URI가 설정되지 않음 - MongoDB 기능 비활성화")
-#     client = None
-#     db = None
-#     fridge_collection = None
-
-# # Pydantic 모델 정의 (냉장고 데이터용) - V2 호환
-# class Ingredient(BaseModel):
-#     id: int
-#     name: str
-#     quantity: int
-#     confidence: Optional[float] = 0.8
-#     source: str = "analysis"
-    
-#     class Config:
-#         # Pydantic V2 호환성을 위한 설정
-#         from_attributes = True
-
-# class FridgeData(BaseModel):
-#     userId: str
-#     ingredients: List[Ingredient]
-#     timestamp: str
-#     totalCount: int
-#     totalTypes: int
-    
-#     class Config:
-#         from_attributes = True
-
-# # YOLO 모델 로드
-# print("YOLO 모델 로딩 중...")
-# model = load_yolo_model()
-# print("✅ YOLO 모델 로드 성공" if model else "❌ YOLO 모델 로드 실패")
-
-# # 환경 변수 확인
-# print(f"CLOVA_OCR_API_URL 설정: {bool(os.environ.get('CLOVA_OCR_API_URL'))}")
-# print(f"CLOVA_SECRET_KEY 설정: {bool(os.environ.get('CLOVA_SECRET_KEY'))}")
-# print(f"GEMINI_API_KEY 설정: {bool(os.environ.get('GEMINI_API_KEY'))}")
-# print(f"MONGODB_URI 설정: {bool(os.environ.get('MONGODB_URI'))}")
-
-# @app.get("/")
-# async def root():
-#     return {
-#         "message": "Food Detection API with MongoDB",
-#         "status": "running",
-#         "model_loaded": model is not None,
-#         "mongodb_connected": fridge_collection is not None,
-#         "env_vars": {
-#             "clova_ocr": bool(os.environ.get('CLOVA_OCR_API_URL')),
-#             "clova_secret": bool(os.environ.get('CLOVA_SECRET_KEY')),
-#             "gemini_key": bool(os.environ.get('GEMINI_API_KEY')),
-#             "mongodb_uri": bool(os.environ.get('MONGODB_URI'))
-#         }
-#     }
-
-# # ===== MongoDB 관련 API 엔드포인트 - SSL 문제 해결 버전 =====
-
-# @app.post("/api/fridge/save")
-# async def save_fridge_data(fridge_data: FridgeData):
-#     """냉장고 데이터 MongoDB에 저장 - SSL 문제 해결 버전"""
-#     if fridge_collection is None:
-#         raise HTTPException(status_code=503, detail="MongoDB가 연결되지 않았습니다")
-    
-#     try:
-#         print(f"💾 냉장고 데이터 저장 시작 - 사용자: {fridge_data.userId}")
-        
-#         # Pydantic V2 호환: model_dump() 사용
-#         ingredients_dict = [ingredient.model_dump() for ingredient in fridge_data.ingredients]
-        
-#         # MongoDB 연결 재확인
-#         try:
-#             await client.admin.command('ping')
-#             print("✅ MongoDB 연결 상태 양호")
-#         except Exception as conn_err:
-#             print(f"❌ MongoDB 연결 확인 실패: {conn_err}")
-#             # 연결 재시도
-#             try:
-#                 await client.close()
-#                 print("🔄 MongoDB 연결 재시도 중...")
-#                 # 새 클라이언트 생성은 하지 않고, 기존 연결 재사용 시도
-#                 await client.admin.command('ping')
-#                 print("✅ MongoDB 재연결 성공")
-#             except:
-#                 raise HTTPException(status_code=503, detail="MongoDB 연결이 불안정합니다. 잠시 후 다시 시도해주세요.")
-        
-#         # 기존 데이터 업데이트 또는 새로 생성
-#         result = await fridge_collection.update_one(
-#             {"userId": fridge_data.userId},
-#             {
-#                 "$set": {
-#                     "ingredients": ingredients_dict,
-#                     "timestamp": fridge_data.timestamp,
-#                     "totalCount": fridge_data.totalCount,
-#                     "totalTypes": fridge_data.totalTypes,
-#                     "updatedAt": datetime.now().isoformat()
-#                 }
-#             },
-#             upsert=True
-#         )
-        
-#         print(f"✅ MongoDB 저장 완료 - 사용자: {fridge_data.userId}, 식재료: {fridge_data.totalTypes}종류")
-        
-#         return {
-#             "success": True,
-#             "message": "냉장고 데이터가 성공적으로 저장되었습니다",
-#             "userId": fridge_data.userId,
-#             "totalTypes": fridge_data.totalTypes,
-#             "totalCount": fridge_data.totalCount,
-#             "isNew": result.upserted_id is not None
-#         }
-    
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         print(f"❌ MongoDB 저장 오류: {e}")
-#         traceback.print_exc()
-        
-#         # SSL 관련 오류인 경우 특별 처리
-#         if "SSL" in str(e) or "TLS" in str(e):
-#             raise HTTPException(
-#                 status_code=503, 
-#                 detail="MongoDB SSL 연결 오류가 발생했습니다. 네트워크 연결을 확인하고 잠시 후 다시 시도해주세요."
-#             )
-#         else:
-#             raise HTTPException(status_code=500, detail=f"저장 중 오류 발생: {str(e)}")
-
-# # MongoDB 연결 상태를 지속적으로 모니터링하는 헬스체크
-# @app.get("/api/fridge/health")
-# async def mongodb_health_check():
-#     """MongoDB 연결 상태 상세 확인"""
-#     if fridge_collection is None:
-#         return {
-#             "mongodb_connected": False,
-#             "error": "MongoDB 클라이언트가 초기화되지 않았습니다",
-#             "mongodb_uri_set": bool(os.environ.get('MONGODB_URI'))
-#         }
-    
-#     try:
-#         # 단순한 ping 명령으로 연결 확인
-#         start_time = datetime.now()
-#         await client.admin.command('ping')
-#         response_time = (datetime.now() - start_time).total_seconds() * 1000
-        
-#         return {
-#             "mongodb_connected": True,
-#             "response_time_ms": round(response_time, 2),
-#             "database": db.name,
-#             "collection": fridge_collection.name,
-#             "status": "healthy"
-#         }
-    
-#     except Exception as e:
-#         return {
-#             "mongodb_connected": False,
-#             "error": str(e),
-#             "error_type": type(e).__name__,
-#             "status": "unhealthy"
-#         }
-
-# # 임시 저장 기능 (MongoDB 문제 시 대안)
-# temp_storage = {}
-
-# @app.post("/api/fridge/save/temp")
-# async def save_fridge_data_temp(fridge_data: FridgeData):
-#     """임시 메모리 저장 (MongoDB 문제 시 대안)"""
-#     try:
-#         print(f"💾 임시 저장 시작 - 사용자: {fridge_data.userId}")
-        
-#         # 메모리에 저장
-#         temp_storage[fridge_data.userId] = {
-#             "ingredients": [ingredient.model_dump() for ingredient in fridge_data.ingredients],
-#             "timestamp": fridge_data.timestamp,
-#             "totalCount": fridge_data.totalCount,
-#             "totalTypes": fridge_data.totalTypes,
-#             "updatedAt": datetime.now().isoformat()
-#         }
-        
-#         print(f"✅ 임시 저장 완료 - 사용자: {fridge_data.userId}")
-        
-#         return {
-#             "success": True,
-#             "message": "데이터가 임시로 저장되었습니다 (MongoDB 연결 후 동기화 필요)",
-#             "userId": fridge_data.userId,
-#             "totalTypes": fridge_data.totalTypes,
-#             "totalCount": fridge_data.totalCount,
-#             "storage": "temporary"
-#         }
-    
-#     except Exception as e:
-#         print(f"❌ 임시 저장 오류: {e}")
-#         raise HTTPException(status_code=500, detail=f"임시 저장 오류: {str(e)}")
-
-# @app.get("/api/fridge/load/temp/{user_id}")
-# async def load_fridge_data_temp(user_id: str):
-#     """임시 저장된 데이터 불러오기"""
-#     if user_id not in temp_storage:
-#         return {
-#             "success": False,
-#             "message": "임시 저장된 데이터가 없습니다",
-#             "storage": "temporary"
-#         }
-    
-#     data = temp_storage[user_id]
-#     return {
-#         "success": True,
-#         "message": "임시 저장된 데이터를 불러왔습니다",
-#         "userId": user_id,
-#         "storage": "temporary",
-#         **data
-#     }
-
-# # 나머지 기존 엔드포인트들은 동일하게 유지...
-# # (여기서는 핵심 수정사항만 표시)
