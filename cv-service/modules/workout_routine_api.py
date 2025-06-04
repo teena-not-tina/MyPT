@@ -1,6 +1,6 @@
 # cv-service/modules/workout_routine_api.py
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
@@ -96,17 +96,23 @@ async def test_connection(db: AsyncIOMotorDatabase = Depends(get_database)):
 
 # API Endpoints
 @router.get("/routines")
-async def get_all_routines(db: AsyncIOMotorDatabase = Depends(get_database)):
-    """Get all workout routines"""
+async def get_all_routines(
+    user_id: int = Query(...),  # 쿼리 파라미터로 user_id 받기
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
     routines = []
-    async for routine in db.routines.find():
+    async for routine in db.routines.find({"user_id": user_id}):
         routines.append(routine_helper(routine))
     return routines
 
+# 특정 날짜 루틴 조회 (user_id 기준)
 @router.get("/routines/{day}")
-async def get_routine_by_day(day: int, db: AsyncIOMotorDatabase = Depends(get_database)):
-    """Get a specific day's routine"""
-    routine = await db.routines.find_one({"day": day})
+async def get_routine_by_day(
+    day: int,
+    user_id: int = Query(...),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    routine = await db.routines.find_one({"day": day, "user_id": user_id})
     if not routine:
         raise HTTPException(status_code=404, detail=f"Routine for day {day} not found")
     return routine_helper(routine)
@@ -295,41 +301,52 @@ async def trigger_posture_analysis(request_data: Dict):
         "websocket_url": "ws://localhost:8001/api/workout/ws/analyze"
     }
 
-# Add user-specific endpoints (for future use)
+# 유저별 루틴 조회
 @router.get("/routines/user/{user_id}")
 async def get_user_routines(
-    user_id: str,
+    user_id: int,
     db: AsyncIOMotorDatabase = Depends(get_database)
 ):
-    """Get all routines for a specific user"""
     routines = []
     async for routine in db.routines.find({"user_id": user_id}):
         routines.append(routine_helper(routine))
     return routines
 
+# 유저별 기본 루틴 복사
 @router.post("/routines/user/{user_id}/copy-default")
 async def copy_default_routines_for_user(
-    user_id: str,
+    user_id: int,
     db: AsyncIOMotorDatabase = Depends(get_database)
 ):
-    """Copy default routines for a new user"""
-    # Check if user already has routines
     existing = await db.routines.find_one({"user_id": user_id})
     if existing:
         raise HTTPException(status_code=400, detail="User already has routines")
-    
-    # Get default routines (ones without user_id)
     default_routines = []
     async for routine in db.routines.find({"user_id": {"$exists": False}}):
-        # Create a copy for the user
         routine_copy = routine.copy()
-        routine_copy.pop("_id", None)  # Remove the original ID
+        routine_copy.pop("_id", None)
         routine_copy["user_id"] = user_id
         routine_copy["created_at"] = datetime.utcnow()
         default_routines.append(routine_copy)
-    
     if default_routines:
         result = await db.routines.insert_many(default_routines)
         return {"message": f"Created {len(result.inserted_ids)} routines for user {user_id}"}
     else:
         raise HTTPException(status_code=404, detail="No default routines found")
+
+
+# 루틴 리셋 (user_id 기준)
+@router.post("/routines/user/{user_id}/reset")
+async def reset_user_routines(
+    user_id: int,
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$set": {"progress": []}}
+    )
+    await db.routines.update_many(
+        {"user_id": user_id},
+        {"$set": {"exercises.$[].sets.$[].completed": False}}
+    )
+    return {"message": "User routines reset"}

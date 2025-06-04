@@ -28,6 +28,8 @@ const WorkoutRoutine = () => {
   const [showAnalyzer, setShowAnalyzer] = useState(false);
   const [selectedExercise, setSelectedExercise] = useState(null);
 
+  const userId = 1
+
   // Styles (same as before)
   const styles = {
     container: {
@@ -163,15 +165,13 @@ const WorkoutRoutine = () => {
 
   useEffect(() => {
     fetchRoutines();
-  }, []);
+  }, [userId]);
 
   const fetchRoutines = async () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching routines...');
-      const data = await workoutService.getAllRoutines();
-      console.log('Received data:', data);
+      const data = await workoutService.getAllRoutines(userId);
       setRoutines(data);
       setLoading(false);
     } catch (err) {
@@ -215,6 +215,8 @@ const WorkoutRoutine = () => {
       // Optionally show error message to user
     }
   };
+
+  
 
   const handleEditSet = async (exerciseId, setId, field, value) => {
     try {
@@ -284,6 +286,23 @@ const WorkoutRoutine = () => {
     }
   };
 
+  const handleReset = async () => {
+  try {
+    await workoutService.resetUserRoutines(userId);
+    // 루틴/진행상황 다시 불러오기
+    fetchRoutines();
+    alert('루틴이 리셋되었습니다!');
+  } catch (err) {
+    alert('루틴 리셋에 실패했습니다.');
+  }
+};
+
+
+// JSX
+<button onClick={handleReset} style={{marginBottom: '1rem', backgroundColor: '#ef4444', color: 'white', padding: '0.5rem 1rem', borderRadius: '0.5rem', border: 'none', cursor: 'pointer'}}>
+  루틴 리셋
+</button>
+
   const handleDeleteExercise = async (exerciseId) => {
     try {
       await workoutService.deleteExercise(selectedDay, exerciseId);
@@ -303,6 +322,7 @@ const WorkoutRoutine = () => {
       console.error('Failed to delete exercise:', err);
     }
   };
+
 
   const handleCameraClick = async (exerciseName) => {
     if (!isExerciseSupported(exerciseName)) {
@@ -375,7 +395,20 @@ const WorkoutRoutine = () => {
   return (
     <div style={styles.container}>
       <h1 style={styles.title}>운동 루틴</h1>
-      
+      <button
+        onClick={handleReset}
+        style={{
+          marginBottom: '1rem',
+          backgroundColor: '#ef4444',
+          color: 'white',
+          padding: '0.5rem 1rem',
+          borderRadius: '0.5rem',
+          border: 'none',
+          cursor: 'pointer'
+        }}
+      >
+        루틴 리셋
+      </button>
       <div style={styles.daySelection}>
         {[1, 2, 3, 4].map(day => (
           <button

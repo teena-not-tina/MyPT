@@ -3,9 +3,9 @@
 const API_BASE_URL = process.env.REACT_APP_CV_SERVICE_URL || 'http://localhost:8001';
 
 class WorkoutService {
-  async getAllRoutines() {
+  async getAllRoutines(userId) {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/workout/routines`);
+      const response = await fetch(`${API_BASE_URL}/api/workout/routines?user_id=${userId}`);
       if (!response.ok) throw new Error('Failed to fetch routines');
       return await response.json();
     } catch (error) {
@@ -23,6 +23,15 @@ class WorkoutService {
       console.error('Error fetching routine:', error);
       throw error;
     }
+  }
+
+  async resetUserRoutines(userId) {
+    const response = await fetch(`${API_BASE_URL}/api/workout/routines/user/${userId}/reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) throw new Error('Failed to reset routines');
+    return await response.json();
   }
 
   async updateSet(day, exerciseId, setId, updateData) {
