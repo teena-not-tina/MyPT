@@ -20,6 +20,8 @@ function App() {
         {/* Main content with routing */}x
         <main className="min-h-screen bg-gray-50">
           <Routes>
+            {/* 홈페이지 */}
+            <Route path="/" element={<WorkoutRoutine />} />
             
             {/* 메인 페이지 */}
             <Route path="/main" element={<MainPage />} />
