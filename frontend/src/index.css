@@ -1,11 +1,7 @@
+/* index.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* 기본 스타일 리셋 */
-* {
-  box-sizing: border-box;
-}
 
 body {
   margin: 0;
@@ -19,68 +15,4 @@ body {
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
-}
-
-/* 커스텀 스크롤바 스타일 */
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
-}
-
-/* 모바일 반응형을 위한 추가 스타일 */
-@media (max-width: 768px) {
-  body {
-    font-size: 14px;
-  }
-}
-
-/* 로딩 애니메이션 개선 */
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.animate-spin {
-  animation: spin 1s linear infinite;
-}
-
-/* 드래그 앤 드롭 스타일 */
-.drag-over {
-  border-color: #3b82f6 !important;
-  background-color: #eff6ff !important;
-}
-
-/* 슬라이더 커스텀 스타일 */
-.slider::-webkit-slider-thumb {
-  appearance: none;
-  height: 20px;
-  width: 20px;
-  border-radius: 50%;
-  background: #3b82f6;
-  cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.slider::-moz-range-thumb {
-  height: 20px;
-  width: 20px;
-  border-radius: 50%;
-  background: #3b82f6;
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }

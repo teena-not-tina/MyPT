@@ -1,7 +1,14 @@
+# -*- coding: utf-8 -*-
 from dotenv import load_dotenv
 import os
+import sys
 
-# .env 파일 로드 (가장 먼저 실행)
+print("=" * 60)
+print("Starting Food Detection API - Debug Version")
+print(f"Python version: {sys.version}")
+print(f"Current directory: {os.getcwd()}")
+print("=" * 60)
+
 load_dotenv()
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -13,81 +20,493 @@ import traceback
 import motor.motor_asyncio
 from datetime import datetime
 import numpy as np
+import requests
+import re
+import json
 
-# 기존 모듈들
-from modules.yolo_detector import detect_objects, load_yolo_model
-from modules.ocr_processor import extract_text_with_ocr
-from modules.gemini import analyze_text_with_gemini
+print("\n--- Checking module imports ---")
+try:
+    from modules.yolo_detector import detect_objects, load_yolo_model
+    print("✓ modules.yolo_detector imported successfully")
+except ImportError as e:
+    print(f"✗ Failed to import modules.yolo_detector: {e}")
+    print("  Creating dummy functions...")
+    def load_yolo_model(path):
+        print(f"DUMMY: load_yolo_model called with {path}")
+        return None
+    def detect_objects(model, path, conf):
+        print(f"DUMMY: detect_objects called")
+        return [], None
 
-# FastAPI 앱 생성
-app = FastAPI(title="Food Detection API with 3-Model Ensemble YOLO", version="3.0.0")
+try:
+    from modules.ocr_processor import extract_text_with_ocr
+    print("✓ modules.ocr_processor imported successfully")
+except ImportError as e:
+    print(f"✗ Failed to import modules.ocr_processor: {e}")
+    def extract_text_with_ocr(path):
+        return "DUMMY OCR TEXT"
 
-# CORS 설정 강화
+try:
+    from modules.gemini import analyze_text_with_gemini
+    print("✓ modules.gemini imported successfully")
+except ImportError as e:
+    print(f"✗ Failed to import modules.gemini: {e}")
+    def analyze_text_with_gemini(text, results):
+        return "DUMMY ANALYSIS"
+
+INGREDIENT_PATTERNS = [
+    {
+        "keywords": ["오렌지농축과즙", "오렌지과즙", "오렌지농축"],
+        "volume": "ml",
+        "result": "오렌지주스",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["아몬드추출액", "아몬드우유", "아몬드밀크"],
+        "volume": "ml",
+        "result": "아몬드밀크",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["원액두유", "분리대두단백", "대두농축액"],
+        "volume": "ml",
+        "result": "두유",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["우유", "전유", "저지방우유"],
+        "volume": "ml",
+        "result": "우유",
+        "confidence": 0.98
+    },
+    {
+        "keywords": ["사과과즙", "사과농축과즙"],
+        "volume": "ml",
+        "result": "사과주스",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["포도과즙", "포도농축과즙"],
+        "volume": "ml",
+        "result": "포도주스",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["토마토과즙", "토마토농축액"],
+        "volume": "ml",
+        "result": "토마토주스",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["백오이", "백색오이"],
+        "result": "오이",
+        "confidence": 0.90
+    },
+    {
+        "keywords": ["무우", "무"],
+        "result": "무",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["당근", "홍당무"],
+        "result": "당근",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["양배추", "캐비지"],
+        "result": "양배추",
+        "confidence": 0.90
+    },
+    {
+        "keywords": ["상추", "청상추"],
+        "result": "상추",
+        "confidence": 0.90
+    },
+    {
+        "keywords": ["배추", "백배추", "절임배추"],
+        "result": "배추",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["사과", "홍옥사과", "부사"],
+        "result": "사과",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["배", "신고배"],
+        "result": "배",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["바나나"],
+        "result": "바나나",
+        "confidence": 0.98
+    },
+    {
+        "keywords": ["오렌지", "네이블오렌지"],
+        "result": "오렌지",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["삼겹살", "돼지삼겹살"],
+        "result": "삼겹살",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["닭가슴살", "닭고기"],
+        "result": "닭가슴살",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["쇠고기", "한우"],
+        "result": "쇠고기",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["연어", "훈제연어"],
+        "result": "연어",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["요구르트", "요거트", "플레인요구르트"],
+        "result": "요구르트",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["치즈", "슬라이스치즈", "모짜렐라"],
+        "result": "치즈",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["버터", "무염버터"],
+        "result": "버터",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["쌀", "백미", "현미"],
+        "result": "쌀",
+        "confidence": 0.98
+    },
+    {
+        "keywords": ["라면", "즉석라면"],
+        "result": "라면",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["스파게티", "파스타"],
+        "result": "파스타",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["간장", "양조간장"],
+        "result": "간장",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["고추장", "태양초고추장"],
+        "result": "고추장",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["마요네즈", "마요"],
+        "result": "마요네즈",
+        "confidence": 0.95
+    },
+    {
+        "keywords": ["케첩", "토마토케첩"],
+        "result": "케챱",
+        "confidence": 0.95
+    }
+]
+
+def extract_keywords_from_ocr(ocr_text: str) -> List[str]:
+    if not ocr_text or not isinstance(ocr_text, str):
+        return []
+    
+    clean_text = re.sub(r'\s+', '', ocr_text)
+    clean_text = re.sub(r'[^\w가-힣]', '', clean_text)
+    clean_text = clean_text.lower()
+    
+    keywords = []
+    
+    for i in range(2, 5):
+        for j in range(len(clean_text) - i + 1):
+            word = clean_text[j:j+i]
+            if len(word) >= 2 and word not in keywords:
+                keywords.append(word)
+    
+    return keywords[:10]
+
+def infer_ingredient_from_patterns(ocr_text: str) -> Optional[Dict]:
+    if not ocr_text:
+        return None
+    
+    normalized_text = ocr_text.lower().replace(' ', '')
+    has_ml = 'ml' in normalized_text or '밀리리터' in normalized_text
+    
+    for pattern in INGREDIENT_PATTERNS:
+        has_keyword = any(keyword.lower() in normalized_text for keyword in pattern["keywords"])
+        
+        if has_keyword:
+            if pattern.get("volume") == "ml" and not has_ml:
+                continue
+            
+            matched_keywords = [kw for kw in pattern["keywords"] if kw.lower() in normalized_text]
+            
+            return {
+                "ingredient": pattern["result"],
+                "confidence": pattern["confidence"],
+                "matched_keywords": matched_keywords,
+                "has_volume": has_ml,
+                "source": "pattern_matching"
+            }
+    
+    return None
+
+def extract_ingredients_from_search_results(search_results: List[Dict], original_keywords: List[str]) -> List[Dict]:
+    common_ingredients = [
+        '오이', '당근', '무', '배추', '상추', '양배추', '브로콜리', '시금치', '고구마', '감자',
+        '양파', '마늘', '생강', '대파', '쪽파', '부추', '고추', '파프리카', '토마토', '가지',
+        '사과', '배', '바나나', '오렌지', '포도', '딸기', '수박', '참외', '멜론', '복숭아',
+        '자두', '키위', '망고', '파인애플', '레몬', '라임', '체리', '블루베리',
+        '쇠고기', '돼지고기', '닭고기', '삼겹살', '닭가슴살', '갈비', '등심', '안심',
+        '연어', '고등어', '참치', '명태', '조기', '갈치', '삼치', '새우', '오징어', '문어',
+        '우유', '요구르트', '치즈', '버터', '크림', '아이스크림',
+        '오렌지주스', '사과주스', '포도주스', '토마토주스', '두유', '아몬드밀크', '코코넛밀크',
+        '쌀', '현미', '보리', '밀', '라면', '우동', '파스타', '스파게티', '국수',
+        '간장', '고추장', '된장', '마요네즈', '케챱', '식초', '설탕', '소금', '후추',
+        '달걀', '계란', '두부', '김치', '김', '미역', '다시마'
+    ]
+    
+    results = []
+    
+    all_text = ' '.join([
+        f"{result.get('title', '')} {result.get('snippet', '')}" 
+        for result in search_results
+    ]).lower()
+    
+    for ingredient in common_ingredients:
+        if ingredient in all_text:
+            match_score = calculate_match_score(ingredient, original_keywords)
+            
+            if match_score > 0.3:
+                results.append({
+                    "name": ingredient,
+                    "confidence": min(0.95, 0.7 + match_score * 0.25),
+                    "keywords": original_keywords,
+                    "match_score": match_score
+                })
+    
+    return sorted(results, key=lambda x: x["confidence"], reverse=True)
+
+def calculate_match_score(ingredient: str, keywords: List[str]) -> float:
+    if not keywords:
+        return 0
+    
+    total_score = 0
+    ingredient_chars = list(ingredient)
+    
+    for keyword in keywords:
+        keyword_chars = list(keyword)
+        match_count = sum(1 for char in keyword_chars if char in ingredient_chars)
+        
+        score = match_count / max(len(keyword_chars), len(ingredient_chars))
+        total_score = max(total_score, score)
+    
+    return total_score
+
+async def search_similar_ingredients(keywords: List[str], query: str) -> Optional[Dict]:
+    if not keywords:
+        return None
+    
+    try:
+        search_results = await perform_google_search(query)
+        
+        if not search_results:
+            return None
+        
+        found_ingredients = extract_ingredients_from_search_results(search_results, keywords)
+        
+        if found_ingredients:
+            return {
+                "ingredient": found_ingredients[0]["name"],
+                "confidence": found_ingredients[0]["confidence"],
+                "matched_keywords": found_ingredients[0]["keywords"],
+                "source": "web_search",
+                "search_query": query,
+                "total_results": len(search_results)
+            }
+    
+    except Exception as e:
+        print(f"Web search error: {e}")
+    
+    return None
+
+async def enhanced_ocr_inference(ocr_text: str) -> Optional[Dict]:
+    if not ocr_text or not ocr_text.strip():
+        return None
+    
+    print(f"Enhanced OCR inference started: \"{ocr_text}\"")
+    
+    pattern_result = infer_ingredient_from_patterns(ocr_text)
+    if pattern_result and pattern_result["confidence"] >= 0.85:
+        print(f"Pattern matching success: {pattern_result}")
+        return pattern_result
+    
+    keywords = extract_keywords_from_ocr(ocr_text)
+    print(f"Extracted keywords: {keywords}")
+    
+    if keywords:
+        search_terms = ' '.join(keywords[:3])
+        search_query = f"{search_terms} 식재료 음식 재료"
+        
+        web_search_result = await search_similar_ingredients(keywords, search_query)
+        if web_search_result and web_search_result["confidence"] >= 0.7:
+            print(f"Web search success: {web_search_result}")
+            return web_search_result
+    
+    if pattern_result:
+        print(f"Pattern matching (low confidence): {pattern_result}")
+        return pattern_result
+    
+    print(f"OCR inference failed: \"{ocr_text}\"")
+    return None
+
+def summarize_ocr_text(ocr_text: str) -> str:
+    if not ocr_text:
+        return ''
+    
+    keywords = extract_keywords_from_ocr(ocr_text)
+    
+    meaningful_keywords = [kw for kw in keywords if len(kw) >= 2][:3]
+    
+    return ' '.join(meaningful_keywords) if meaningful_keywords else ocr_text[:10]
+
+async def perform_google_search(query: str) -> List[Dict]:
+    try:
+        api_key = os.getenv("GOOGLE_API_KEY")
+        search_engine_id = os.getenv("SEARCH_ENGINE_ID")
+        
+        if not api_key or not search_engine_id:
+            print("Google API key or Search Engine ID not set")
+            return generate_mock_search_results(query)
+        
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {
+            "key": api_key,
+            "cx": search_engine_id,
+            "q": query,
+            "num": 10,
+            "lr": "lang_ko",
+            "safe": "medium"
+        }
+        
+        response = requests.get(url, params=params, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            results = []
+            
+            for item in data.get("items", []):
+                results.append({
+                    "title": item.get("title", ""),
+                    "snippet": item.get("snippet", ""),
+                    "url": item.get("link", ""),
+                    "source": "google_search"
+                })
+            
+            return results
+        else:
+            print(f"Google search API error: {response.status_code}")
+            return generate_mock_search_results(query)
+            
+    except Exception as e:
+        print(f"Google search API call failed: {e}")
+        return generate_mock_search_results(query)
+
+def generate_mock_search_results(query: str) -> List[Dict]:
+    return [
+        {
+            "title": f"{query} - 네이버 백과사전",
+            "snippet": f"{query}에 대한 상세한 정보와 영양성분을 확인하세요.",
+            "url": "https://terms.naver.com",
+            "source": "mock_search"
+        },
+        {
+            "title": f"{query} 레시피 및 효능",
+            "snippet": f"신선한 {query}의 선택법과 보관방법, 건강 효능을 소개합니다.",
+            "url": "https://recipe.example.com",
+            "source": "mock_search"
+        },
+        {
+            "title": f"{query} 영양정보",
+            "snippet": f"{query}의 칼로리, 단백질, 탄수화물 등 영양성분 정보입니다.",
+            "url": "https://nutrition.example.com",
+            "source": "mock_search"
+        }
+    ]
+
+app = FastAPI(title="Food Detection API with Enhanced OCR Inference", version="4.0.0")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://192.168.0.19:3000",
-        "*"  # 개발 중에만 사용
+        "*"
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# MongoDB 설정 - 사용자 정의 설정
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://root:example@192.168.0.199:27017")
-DB_NAME = "test"  # 임시 DB명 (회의 후 변경)
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "be-fit")  # 냉장고 식재료 컬렉션
+DB_NAME = "test"
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "be-fit")
 
+print("\n--- MongoDB Setup ---")
 if MONGODB_URI:
     try:
-        # 로컬 MongoDB 설정 (Docker나 로컬 설치)
         client = motor.motor_asyncio.AsyncIOMotorClient(
             MONGODB_URI,
-            # 로컬 MongoDB이므로 SSL 설정 불필요
-            serverSelectionTimeoutMS=5000,   # 타임아웃 단축
+            serverSelectionTimeoutMS=5000,
             connectTimeoutMS=5000,
             socketTimeoutMS=5000,
-            # 재시도 설정
             retryWrites=True,
             retryReads=True,
-            # 연결 풀 설정
             maxPoolSize=10,
             minPoolSize=1
         )
         
-        # 사용자 정의 데이터베이스와 컬렉션 사용
         db = client[DB_NAME]
         fridge_collection = db[COLLECTION_NAME]
         
-        print(f"✅ MongoDB 연결 설정 완료")
-        print(f"📍 URI: {MONGODB_URI}")
-        print(f"🗄️ 데이터베이스: {DB_NAME}")
-        print(f"📊 컬렉션: {COLLECTION_NAME}")
+        print(f"✓ MongoDB connection configured")
+        print(f"  URI: {MONGODB_URI}")
+        print(f"  Database: {DB_NAME}")
+        print(f"  Collection: {COLLECTION_NAME}")
         
     except Exception as e:
-        print(f"❌ MongoDB 클라이언트 생성 실패: {e}")
+        print(f"✗ MongoDB client creation failed: {e}")
         client = None
         db = None
         fridge_collection = None
 else:
-    print("⚠️ MONGODB_URI가 설정되지 않음 - MongoDB 기능 비활성화")
+    print("✗ MONGODB_URI not set - MongoDB features disabled")
     client = None
     db = None
     fridge_collection = None
 
-# Pydantic 모델 정의 (냉장고 식재료 데이터용)
 class Ingredient(BaseModel):
     id: int
     name: str
     quantity: int
     confidence: Optional[float] = 0.8
-    source: str = "analysis"  # detection, ocr, ocr_smart, analysis, ensemble
-    bbox: Optional[List[float]] = None  # YOLO bbox 정보
-    originalClass: Optional[str] = None  # 원본 영어 클래스명
-    ensemble_info: Optional[Dict] = None  # 앙상블 상세 정보
+    source: str = "analysis"
+    bbox: Optional[List[float]] = None
+    originalClass: Optional[str] = None
+    ensemble_info: Optional[Dict] = None
     
     class Config:
         from_attributes = True
@@ -98,13 +517,12 @@ class FridgeData(BaseModel):
     timestamp: str
     totalCount: int
     totalTypes: int
-    analysisMethod: Optional[str] = "ensemble"  # detection, ocr, mixed, ensemble
-    deviceInfo: Optional[str] = None  # 기기 정보
+    analysisMethod: Optional[str] = "ensemble"
+    deviceInfo: Optional[str] = None
     
     class Config:
         from_attributes = True
 
-# ===== 간소화된 데이터 모델 (사용자 요구사항에 맞춤) =====
 class SimpleIngredient(BaseModel):
     id: int
     name: str
@@ -116,11 +534,26 @@ class SimpleFridgeData(BaseModel):
     userId: str
     ingredients: List[SimpleIngredient]
 
-# ===== 버전3 데이터 마이그레이션 관련 모델 =====
+class SearchRequest(BaseModel):
+    query: str
+    max_results: Optional[int] = 10
+    include_images: Optional[bool] = False
+    safe_search: Optional[str] = "moderate"
+
+class SearchResult(BaseModel):
+    title: str
+    snippet: str
+    url: str
+    source: str
+
+class IngredientValidationRequest(BaseModel):
+    name: str
+    ocr_context: Optional[str] = ""
+    use_web_search: Optional[bool] = True
+
 class V3IngredientData(BaseModel):
-    """버전3 호환 식재료 데이터 모델"""
     name: Optional[str] = None
-    ingredient: Optional[str] = None  # 버전3에서 사용했을 수 있는 필드명
+    ingredient: Optional[str] = None
     food: Optional[str] = None
     foodName: Optional[str] = None
     quantity: Optional[int] = 1
@@ -130,16 +563,13 @@ class V3IngredientData(BaseModel):
     source: Optional[str] = "v3_migration"
 
 def convert_v3_to_current_format(v3_data):
-    """버전3 데이터를 현재 형식으로 변환"""
     if not v3_data:
         return []
     
     converted_ingredients = []
     
     for idx, item in enumerate(v3_data):
-        # 다양한 형태의 버전3 데이터 처리
         if isinstance(item, str):
-            # 단순 문자열인 경우
             converted_ingredients.append({
                 "id": idx + 1,
                 "name": item,
@@ -148,12 +578,11 @@ def convert_v3_to_current_format(v3_data):
                 "source": "v3_text_migration"
             })
         elif isinstance(item, dict):
-            # 딕셔너리인 경우 필드명 매핑
             name = (item.get("name") or 
                    item.get("ingredient") or 
                    item.get("food") or 
                    item.get("foodName") or 
-                   "알 수 없는 식재료")
+                   "Unknown ingredient")
             
             quantity = (item.get("quantity") or 
                        item.get("count") or 
@@ -169,48 +598,146 @@ def convert_v3_to_current_format(v3_data):
     
     return converted_ingredients
 
-# ===== 3가지 YOLO 모델 앙상블 =====
 def load_ensemble_models():
-    """3가지 YOLO 앙상블 모델들을 로드"""
     models = {}
     model_paths = {
         'yolo11s': 'models/yolo11s.pt',
         'best': 'models/best.pt',
-        'best_friged': 'models/best_fri.pt'  # 새로 추가된 세 번째 모델
+        'best_friged': 'models/best_friged.pt'
     }
     
-    print("🤖 3가지 YOLO 앙상블 모델 로딩 중...")
+    print("\n=== LOADING 3 YOLO ENSEMBLE MODELS ===")
+    print(f"Current working directory: {os.getcwd()}")
+    print(f"Directory contents: {os.listdir('.')}")
     
+    print("\n--- Checking Dependencies ---")
+    try:
+        from ultralytics import YOLO
+        print("✓ ultralytics library loaded successfully")
+    except ImportError as e:
+        print(f"✗ ultralytics library import failed: {e}")
+        print("  Solution: pip install ultralytics")
+        return models
+    
+    try:
+        import torch
+        print(f"✓ torch library loaded successfully (version: {torch.__version__})")
+        if torch.cuda.is_available():
+            print(f"  CUDA available: {torch.cuda.get_device_name(0)}")
+        else:
+            print("  Running in CPU mode")
+    except ImportError as e:
+        print(f"✗ torch library import failed: {e}")
+        print("  Solution: pip install torch")
+        return models
+    
+    print("\n--- Checking Model Directory ---")
+    models_dir = "models"
+    if os.path.exists(models_dir):
+        print(f"✓ models directory exists")
+        try:
+            files = os.listdir(models_dir)
+            print(f"  Files in models directory: {files}")
+            pt_files = [f for f in files if f.endswith('.pt')]
+            print(f"  .pt model files: {pt_files}")
+        except Exception as e:
+            print(f"✗ Error reading models directory: {e}")
+    else:
+        print(f"✗ models directory does not exist!")
+        print(f"  Solution: Create models folder and add model files")
+        print(f"  Commands:")
+        print(f"    mkdir models")
+        print(f"    cd models")
+        print(f"    wget https://github.com/ultralytics/assets/releases/download/v0.0.0/yolo11s.pt")
+        return models
+    
+    print("\n--- Loading Individual Models ---")
     for model_name, model_path in model_paths.items():
+        print(f"\n[{model_name}] Loading model...")
+        print(f"  File path: {model_path}")
+        
         try:
             if os.path.exists(model_path):
-                model = load_yolo_model(model_path)
-                if model:
-                    models[model_name] = model
-                    print(f"✅ {model_name} 모델 로드 성공: {model_path}")
+                print(f"  ✓ File exists")
+                file_size = os.path.getsize(model_path)
+                print(f"  File size: {file_size / (1024*1024):.1f} MB")
+                
+                if file_size < 1024 * 1024:
+                    print(f"  ⚠️ Warning: File size too small ({file_size} bytes)")
+                    print("    Model file may be corrupted")
+                
+                if os.access(model_path, os.R_OK):
+                    print(f"  ✓ File read permission: OK")
                 else:
-                    print(f"❌ {model_name} 모델 로드 실패: {model_path}")
+                    print(f"  ✗ File read permission: DENIED")
+                    continue
+                
+                print(f"  Loading model...")
+                
+                try:
+                    print(f"    Attempting direct YOLO load...")
+                    direct_model = YOLO(model_path)
+                    print(f"    ✓ Direct YOLO load successful!")
+                    
+                    model = load_yolo_model(model_path)
+                    
+                    if model:
+                        models[model_name] = model
+                        print(f"  ✓ {model_name} model loaded successfully!")
+                        print(f"    Model type: {type(model)}")
+                    else:
+                        print(f"  ✗ {model_name} model load failed: load_yolo_model returned None")
+                        models[model_name] = direct_model
+                        print(f"    Using direct YOLO load instead")
+                        
+                except Exception as direct_error:
+                    print(f"  ✗ Direct YOLO load failed: {direct_error}")
+                    print(f"    Error type: {type(direct_error).__name__}")
+                    traceback.print_exc()
+                    
             else:
-                print(f"⚠️ {model_name} 모델 파일 없음: {model_path}")
+                print(f"  ✗ File not found: {model_path}")
+                dir_name = os.path.dirname(model_path)
+                if os.path.exists(dir_name):
+                    similar_files = [f for f in os.listdir(dir_name) if f.endswith('.pt')]
+                    print(f"    .pt files in directory: {similar_files}")
+                    
+                    base_name = os.path.basename(model_path).replace('.pt', '')
+                    similar = [f for f in similar_files if base_name.lower() in f.lower()]
+                    if similar:
+                        print(f"    Similar filenames: {similar}")
+                    
         except Exception as e:
-            print(f"❌ {model_name} 모델 로드 오류: {e}")
+            print(f"  ✗ {model_name} model load error:")
+            print(f"    Error type: {type(e).__name__}")
+            print(f"    Error message: {str(e)}")
+            traceback.print_exc()
     
-    print(f"📊 총 {len(models)}개 모델 로드 완료: {list(models.keys())}")
+    print(f"\n=== MODEL LOADING SUMMARY ===")
+    print(f"Final result: {len(models)} models loaded")
+    print(f"Loaded models: {list(models.keys())}")
     
-    # 최소 1개 모델은 필요
     if len(models) == 0:
-        print("⚠️ 경고: 로드된 모델이 없습니다!")
+        print("\n⚠️ WARNING: No models loaded!")
+        print("This will cause 500 errors on /api/detect endpoint")
+        print("\nTroubleshooting steps:")
+        print("1. Check if models/*.pt files exist")
+        print("2. Ensure modules/yolo_detector.py exists and has load_yolo_model function")
+        print("3. Install required packages: pip install ultralytics torch")
+        print("4. Check file permissions: chmod 644 models/*.pt")
+        
     elif len(models) < 3:
-        print(f"⚠️ 경고: 3개 모델 중 {len(models)}개만 로드됨")
+        print(f"\n⚠️ Warning: Only {len(models)} of 3 models loaded")
+        print(f"Missing models: {[name for name in model_paths.keys() if name not in models]}")
+    else:
+        print("\n✓ All models loaded successfully!")
     
     return models
 
 def calculate_iou(box1, box2):
-    """두 바운딩 박스 간의 IoU(Intersection over Union) 계산"""
     x1_1, y1_1, x2_1, y2_1 = box1
     x1_2, y1_2, x2_2, y2_2 = box2
     
-    # 교집합 영역 계산
     x1_inter = max(x1_1, x1_2)
     y1_inter = max(y1_1, y1_2)
     x2_inter = min(x2_1, x2_2)
@@ -221,7 +748,6 @@ def calculate_iou(box1, box2):
     
     inter_area = (x2_inter - x1_inter) * (y2_inter - y1_inter)
     
-    # 합집합 영역 계산
     area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
     area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
     union_area = area1 + area2 - inter_area
@@ -229,33 +755,22 @@ def calculate_iou(box1, box2):
     return inter_area / union_area if union_area > 0 else 0.0
 
 def ensemble_detections(detections_dict, iou_threshold=0.5, confidence_weights=None):
-    """
-    여러 모델의 탐지 결과를 앙상블하여 최종 결과 생성
-    
-    Args:
-        detections_dict: {model_name: detections_list} 형태의 딕셔너리
-        iou_threshold: NMS를 위한 IoU 임계값
-        confidence_weights: 각 모델의 가중치 {model_name: weight}
-    """
     if not detections_dict:
         return []
     
-    # 3가지 모델에 최적화된 기본 가중치 설정
     if confidence_weights is None:
         confidence_weights = {
-            'yolo11s': 1.1,      # 범용 모델
-            'best': 1.1,         # 커스텀 학습 모델 (높은 가중치)
-            'best_friged': 0.8   # 냉장고 특화 모델 (중간 가중치)
+            'yolo11s': 1.1,
+            'best': 1.1,
+            'best_friged': 0.8
         }
     
-    # 모든 탐지 결과를 하나의 리스트로 통합
     all_detections = []
     
     for model_name, detections in detections_dict.items():
         model_weight = confidence_weights.get(model_name, 1.0)
         
         for detection in detections:
-            # 신뢰도에 모델 가중치 적용
             weighted_confidence = detection['confidence'] * model_weight
             
             enhanced_detection = {
@@ -267,10 +782,8 @@ def ensemble_detections(detections_dict, iou_threshold=0.5, confidence_weights=N
             }
             all_detections.append(enhanced_detection)
     
-    # 신뢰도 기준으로 정렬
     all_detections.sort(key=lambda x: x['confidence'], reverse=True)
     
-    # NMS 적용하여 중복 제거
     final_detections = []
     
     for current_detection in all_detections:
@@ -280,12 +793,10 @@ def ensemble_detections(detections_dict, iou_threshold=0.5, confidence_weights=N
         for kept_detection in final_detections:
             kept_bbox = kept_detection['bbox']
             
-            # 같은 클래스이고 IoU가 임계값보다 높으면 중복으로 판단
             if (current_detection['class'] == kept_detection['class'] and 
                 calculate_iou(current_bbox, kept_bbox) > iou_threshold):
                 should_keep = False
                 
-                # 앙상블 정보 업데이트 (여러 모델에서 탐지된 경우)
                 if 'ensemble_sources' not in kept_detection:
                     kept_detection['ensemble_sources'] = [kept_detection['model_source']]
                     kept_detection['ensemble_confidences'] = [kept_detection['original_confidence']]
@@ -295,7 +806,6 @@ def ensemble_detections(detections_dict, iou_threshold=0.5, confidence_weights=N
                 kept_detection['ensemble_confidences'].append(current_detection['original_confidence'])
                 kept_detection['ensemble_weights'].append(current_detection['model_weight'])
                 
-                # 가중 평균 신뢰도로 업데이트
                 weighted_sum = sum(conf * weight for conf, weight in 
                                  zip(kept_detection['ensemble_confidences'], kept_detection['ensemble_weights']))
                 weight_sum = sum(kept_detection['ensemble_weights'])
@@ -305,14 +815,12 @@ def ensemble_detections(detections_dict, iou_threshold=0.5, confidence_weights=N
                 break
         
         if should_keep:
-            # 단일 모델 탐지 정보 추가
             current_detection['ensemble_sources'] = [current_detection['model_source']]
             current_detection['ensemble_confidences'] = [current_detection['original_confidence']]
             current_detection['ensemble_weights'] = [current_detection['model_weight']]
             current_detection['ensemble_count'] = 1
             final_detections.append(current_detection)
     
-    # 앙상블 메타데이터 추가
     for detection in final_detections:
         detection['ensemble_info'] = {
             'models_used': detection['ensemble_sources'],
@@ -320,49 +828,48 @@ def ensemble_detections(detections_dict, iou_threshold=0.5, confidence_weights=N
             'model_weights': dict(zip(detection['ensemble_sources'], detection['ensemble_weights'])),
             'ensemble_count': detection['ensemble_count'],
             'final_confidence': detection['confidence'],
-            'is_consensus': detection['ensemble_count'] >= 2  # 2개 이상 모델에서 탐지됨
+            'is_consensus': detection['ensemble_count'] >= 2
         }
     
     return final_detections
 
 def detect_objects_ensemble(models, image_path, confidence=0.5, ensemble_weights=None):
-    """3가지 앙상블 모델을 사용한 객체 탐지"""
     if not models:
-        raise ValueError("로드된 모델이 없습니다")
+        raise ValueError("No models loaded")
     
-    print(f"🔍 3가지 모델 앙상블 탐지 시작 - 모델 수: {len(models)}")
+    print(f"\n--- Starting 3-model ensemble detection ---")
+    print(f"Image: {image_path}")
+    print(f"Confidence threshold: {confidence}")
+    print(f"Models available: {list(models.keys())}")
     
-    # 각 모델별 탐지 결과 수집
     all_detections = {}
     total_detections = 0
     
     for model_name, model in models.items():
         try:
-            print(f"   📊 {model_name} 모델 탐지 중...")
+            print(f"\n  [{model_name}] Detecting...")
             detections, _ = detect_objects(model, image_path, confidence)
             all_detections[model_name] = detections
             total_detections += len(detections)
-            print(f"   ✅ {model_name}: {len(detections)}개 객체 탐지")
+            print(f"  [{model_name}] Found {len(detections)} objects")
         except Exception as e:
-            print(f"   ❌ {model_name} 탐지 오류: {e}")
+            print(f"  [{model_name}] ERROR: {e}")
+            traceback.print_exc()
             all_detections[model_name] = []
 
-    print(f"📊 원본 탐지 결과: 총 {total_detections}개 객체 (앙상블 전)")
+    print(f"\nTotal raw detections: {total_detections} objects (before ensemble)")
     
-    # 3가지 모델에 최적화된 앙상블 가중치 설정
     if ensemble_weights is None:
         ensemble_weights = {
-            'yolo11s': 1.0,      # 범용 모델 기준
-            'best': 1.1,         # 커스텀 학습 모델 (가장 높은 가중치)
-            'best_friged': 0.9   # 냉장고 특화 모델 (중간 가중치)
+            'yolo11s': 1.0,
+            'best': 1.1,
+            'best_friged': 0.9
         }
     
-    # 앙상블 수행
     final_detections = ensemble_detections(all_detections, confidence_weights=ensemble_weights)
     
-    print(f"✅ 3가지 모델 앙상블 완료: {len(final_detections)}개 최종 객체")
+    print(f"Ensemble complete: {len(final_detections)} final objects")
     
-    # 상세 통계 정보 출력
     ensemble_stats = {}
     consensus_count = 0
     
@@ -375,29 +882,51 @@ def detect_objects_ensemble(models, image_path, confidence=0.5, ensemble_weights
         if detection['ensemble_info']['is_consensus']:
             consensus_count += 1
     
-    print(f"📊 앙상블 통계:")
-    print(f"   - 1개 모델 탐지: {ensemble_stats.get(1, 0)}개")
-    print(f"   - 2개 모델 합의: {ensemble_stats.get(2, 0)}개")
-    print(f"   - 3개 모델 합의: {ensemble_stats.get(3, 0)}개")
-    print(f"   - 전체 합의 객체: {consensus_count}개 ({consensus_count/len(final_detections)*100:.1f}%)")
+    print(f"\nEnsemble statistics:")
+    print(f"  - 1 model detection: {ensemble_stats.get(1, 0)}")
+    print(f"  - 2 model consensus: {ensemble_stats.get(2, 0)}")
+    print(f"  - 3 model consensus: {ensemble_stats.get(3, 0)}")
+    print(f"  - Total consensus: {consensus_count} ({consensus_count/len(final_detections)*100:.1f}%)" if final_detections else "  - No detections")
     
     return final_detections, all_detections
 
-# 3가지 YOLO 앙상블 모델 로드
+print("\n" + "=" * 60)
+print("LOADING MODELS")
+print("=" * 60)
 ensemble_models = load_ensemble_models()
+print("=" * 60 + "\n")
 
-# 환경 변수 확인
-print(f"CLOVA_OCR_API_URL 설정: {bool(os.environ.get('CLOVA_OCR_API_URL'))}")
-print(f"CLOVA_SECRET_KEY 설정: {bool(os.environ.get('CLOVA_SECRET_KEY'))}")
-print(f"GEMINI_API_KEY 설정: {bool(os.environ.get('GEMINI_API_KEY'))}")
-print(f"MONGODB_URI 설정: {bool(MONGODB_URI)}")
+print("\n--- Environment Variables Check ---")
+print(f"CLOVA_OCR_API_URL set: {bool(os.environ.get('CLOVA_OCR_API_URL'))}")
+print(f"CLOVA_SECRET_KEY set: {bool(os.environ.get('CLOVA_SECRET_KEY'))}")
+print(f"GEMINI_API_KEY set: {bool(os.environ.get('GEMINI_API_KEY'))}")
+print(f"GOOGLE_API_KEY set: {bool(os.environ.get('GOOGLE_API_KEY'))}")
+print(f"SEARCH_ENGINE_ID set: {bool(os.environ.get('SEARCH_ENGINE_ID'))}")
+print(f"MONGODB_URI set: {bool(MONGODB_URI)}")
 
 @app.get("/")
 async def root():
     return {
-        "message": "Food Detection API with 3-Model Ensemble YOLO",
-        "version": "3.0.0",
+        "message": "Food Detection API with Enhanced OCR Inference - DEBUG VERSION",
+        "version": "4.0.0-debug",
         "status": "running",
+        "debug_info": {
+            "working_directory": os.getcwd(),
+            "python_version": sys.version,
+            "models_loaded": len(ensemble_models),
+            "model_names": list(ensemble_models.keys()),
+            "temp_dir_exists": os.path.exists("temp"),
+            "modules_dir_exists": os.path.exists("modules"),
+            "models_dir_exists": os.path.exists("models")
+        },
+        "features": [
+            "3-Model YOLO Ensemble",
+            "Enhanced OCR Inference",
+            "Pattern Matching",
+            "Web Search Integration",
+            "MongoDB Storage",
+            "V3 Data Migration"
+        ],
         "ensemble_models": {
             "loaded_models": list(ensemble_models.keys()),
             "model_count": len(ensemble_models),
@@ -415,31 +944,240 @@ async def root():
             "clova_ocr": bool(os.environ.get('CLOVA_OCR_API_URL')),
             "clova_secret": bool(os.environ.get('CLOVA_SECRET_KEY')),
             "gemini_key": bool(os.environ.get('GEMINI_API_KEY')),
+            "google_api_key": bool(os.environ.get('GOOGLE_API_KEY')),
+            "search_engine_id": bool(os.environ.get('SEARCH_ENGINE_ID')),
             "mongodb_uri": bool(MONGODB_URI)
         }
     }
 
-# ===== 수정된 API 엔드포인트들 =====
+@app.post("/api/ocr")
+async def extract_ocr_text(file: UploadFile = File(...)):
+    try:
+        print(f"\n=== OCR API Called ===")
+        print(f"Filename: {file.filename}")
+        print(f"Content-Type: {file.content_type}")
+        
+        if not file.content_type.startswith('image/'):
+            print(f"ERROR: Invalid file type: {file.content_type}")
+            raise HTTPException(status_code=422, detail=f"Only image files allowed. Current: {file.content_type}")
+        
+        os.makedirs("temp", exist_ok=True)
+        image_path = f"temp/{file.filename}"
+        
+        content = await file.read()
+        with open(image_path, "wb") as f:
+            f.write(content)
+        print(f"File saved to: {image_path}")
+        
+        print(f"Extracting OCR text...")
+        ocr_text = extract_text_with_ocr(image_path)
+        print(f"OCR complete: {len(ocr_text) if ocr_text else 0} characters")
+        
+        try:
+            os.remove(image_path)
+        except:
+            pass
+        
+        return {
+            "text": ocr_text,
+            "confidence": 0.85,
+            "processing_time": 1.2,
+            "language": "kor+eng",
+            "method": "clova_ocr"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"\nERROR in extract_ocr_text:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"OCR error: {str(e)}")
+
+@app.post("/api/ocr/enhanced")
+async def enhanced_ocr_analysis(file: UploadFile = File(...)):
+    try:
+        print(f"\n=== Enhanced OCR API Called ===")
+        print(f"Filename: {file.filename}")
+        
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=422, detail=f"Only image files allowed. Current: {file.content_type}")
+        
+        os.makedirs("temp", exist_ok=True)
+        image_path = f"temp/{file.filename}"
+        
+        content = await file.read()
+        with open(image_path, "wb") as f:
+            f.write(content)
+        
+        print(f"Step 1: OCR text extraction")
+        ocr_text = extract_text_with_ocr(image_path)
+        print(f"Extracted text: {ocr_text}")
+        
+        print(f"Step 2: Enhanced OCR inference")
+        inference_result = await enhanced_ocr_inference(ocr_text)
+        
+        keywords = extract_keywords_from_ocr(ocr_text)
+        summarized_text = summarize_ocr_text(ocr_text)
+        
+        try:
+            os.remove(image_path)
+        except:
+            pass
+        
+        response = {
+            "original_text": ocr_text,
+            "keywords": keywords,
+            "summarized_text": summarized_text,
+            "inference_result": inference_result,
+            "processing_steps": [
+                "OCR text extraction",
+                "Pattern matching analysis", 
+                "Keyword extraction",
+                "Web search validation" if inference_result and inference_result.get("source") == "web_search" else "Pattern-based inference",
+                "Final result generation"
+            ]
+        }
+        
+        if inference_result:
+            print(f"Enhanced OCR success: {inference_result['ingredient']} ({inference_result['confidence']*100:.1f}%)")
+        else:
+            print(f"Enhanced OCR inference failed")
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"\nERROR in enhanced_ocr_analysis:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Enhanced OCR analysis error: {str(e)}")
+
+@app.post("/api/search")
+async def web_search(request: SearchRequest):
+    try:
+        print(f"\n=== Web Search API Called ===")
+        print(f"Query: {request.query}")
+        
+        if not request.query or not request.query.strip():
+            raise HTTPException(status_code=400, detail="Search query required")
+        
+        search_results = await perform_google_search(request.query)
+        
+        print(f"Search complete: {len(search_results)} results")
+        
+        return {
+            "results": search_results[:request.max_results],
+            "query": request.query,
+            "total_results": len(search_results),
+            "search_engine": "google_custom_search" if os.getenv("GOOGLE_API_KEY") else "mock_search"
+        }
+        
+    except Exception as e:
+        print(f"\nERROR in web_search:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Web search error: {str(e)}")
+
+@app.post("/api/ingredient/validate")
+async def validate_ingredient_name(request: IngredientValidationRequest):
+    try:
+        print(f"\n=== Ingredient Validation API Called ===")
+        print(f"Name: {request.name}")
+        
+        if not request.name or not request.name.strip():
+            raise HTTPException(status_code=400, detail="Ingredient name required")
+        
+        if request.use_web_search and request.ocr_context:
+            inference_result = await enhanced_ocr_inference(request.ocr_context)
+            
+            if inference_result:
+                return {
+                    "validated_name": inference_result["ingredient"],
+                    "confidence": inference_result["confidence"],
+                    "method": inference_result["source"],
+                    "original_name": request.name,
+                    "ocr_context": request.ocr_context,
+                    "matched_keywords": inference_result.get("matched_keywords", [])
+                }
+        
+        pattern_result = infer_ingredient_from_patterns(request.name)
+        
+        if pattern_result:
+            return {
+                "validated_name": pattern_result["ingredient"],
+                "confidence": pattern_result["confidence"],
+                "method": "pattern_matching",
+                "original_name": request.name,
+                "matched_keywords": pattern_result.get("matched_keywords", [])
+            }
+        
+        return {
+            "validated_name": request.name,
+            "confidence": 0.5,
+            "method": "no_validation",
+            "original_name": request.name,
+            "suggestions": []
+        }
+        
+    except Exception as e:
+        print(f"\nERROR in validate_ingredient_name:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Ingredient validation error: {str(e)}")
 
 @app.post("/api/detect")
 async def detect_food(file: UploadFile = File(...), confidence: float = 0.5, use_ensemble: bool = True):
-    """3가지 YOLO 앙상블 식품 탐지"""
-    if not ensemble_models:
-        raise HTTPException(status_code=500, detail="YOLO 모델이 로드되지 않았습니다")
-    
     try:
-        print(f"📁 파일 업로드: {file.filename}")
+        print(f"\n{'='*60}")
+        print("DETECTION API CALLED")
+        print(f"{'='*60}")
+        print(f"File: {file.filename}")
+        print(f"Content-Type: {file.content_type}")
+        print(f"Confidence: {confidence}")
+        print(f"Use Ensemble: {use_ensemble}")
+        print(f"Models loaded: {list(ensemble_models.keys())}")
+        print(f"Model count: {len(ensemble_models)}")
+        
+        if not ensemble_models:
+            error_detail = {
+                "error": "No YOLO models loaded",
+                "debug_info": {
+                    "current_dir": os.getcwd(),
+                    "models_dir_exists": os.path.exists("models"),
+                    "models_files": os.listdir("models") if os.path.exists("models") else [],
+                    "modules_dir_exists": os.path.exists("modules"),
+                    "loaded_models": list(ensemble_models.keys()),
+                    "suggestions": [
+                        "1. Check if models/*.pt files exist",
+                        "2. Check if modules/yolo_detector.py exists", 
+                        "3. Run: pip install ultralytics torch",
+                        "4. Check file permissions: chmod 644 models/*.pt"
+                    ]
+                }
+            }
+            print(f"\nERROR DETAIL:")
+            print(json.dumps(error_detail, indent=2))
+            raise HTTPException(status_code=500, detail=error_detail)
+        
+        print("\nSaving uploaded file...")
         os.makedirs("temp", exist_ok=True)
         image_path = f"temp/{file.filename}"
         
         with open(image_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
+        print(f"File saved to: {image_path}")
+        print(f"File size: {os.path.getsize(image_path)} bytes")
         
         if use_ensemble and len(ensemble_models) > 1:
-            print(f"🤖 3가지 모델 앙상블 탐지 시작 (신뢰도: {confidence})")
+            print(f"\nUsing ensemble detection with {len(ensemble_models)} models")
             detections, model_results = detect_objects_ensemble(ensemble_models, image_path, confidence)
             
-            # 합의 객체와 단독 탐지 분류
             consensus_detections = [d for d in detections if d['ensemble_info']['is_consensus']]
             single_detections = [d for d in detections if not d['ensemble_info']['is_consensus']]
             
@@ -458,9 +1196,8 @@ async def detect_food(file: UploadFile = File(...), confidence: float = 0.5, use
                 }
             }
         else:
-            # 단일 모델 사용 (첫 번째 사용 가능한 모델)
             model_name, model = next(iter(ensemble_models.items()))
-            print(f"🔍 단일 모델 탐지 시작: {model_name} (신뢰도: {confidence})")
+            print(f"\nUsing single model: {model_name}")
             detections, _ = detect_objects(model, image_path, confidence)
             
             response = {
@@ -470,7 +1207,8 @@ async def detect_food(file: UploadFile = File(...), confidence: float = 0.5, use
                 "available_models": list(ensemble_models.keys())
             }
         
-        print(f"✅ 탐지 완료: {len(detections)}개 객체")
+        print(f"\nDetection complete: {len(detections)} objects found")
+        print(f"{'='*60}\n")
         
         try:
             os.remove(image_path)
@@ -479,33 +1217,52 @@ async def detect_food(file: UploadFile = File(...), confidence: float = 0.5, use
         
         return response
         
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"❌ 탐지 오류: {e}")
+        print(f"\nERROR in detect_food:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
+        print(f"\nFull traceback:")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"탐지 오류: {str(e)}")
+        
+        error_response = {
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "debug_info": {
+                "models_loaded": list(ensemble_models.keys()),
+                "model_count": len(ensemble_models),
+                "file_name": file.filename if 'file' in locals() else "Unknown",
+                "current_dir": os.getcwd()
+            }
+        }
+        
+        raise HTTPException(status_code=500, detail=error_response)
 
 @app.post("/api/detect/single/{model_name}")
 async def detect_food_single_model(model_name: str, file: UploadFile = File(...), confidence: float = 0.5):
-    """특정 단일 모델로 식품 탐지 (3가지 모델 중 선택)"""
     if model_name not in ensemble_models:
         available_models = list(ensemble_models.keys())
         raise HTTPException(
             status_code=404, 
-            detail=f"모델 '{model_name}'을 찾을 수 없습니다. 사용 가능한 모델: {available_models}"
+            detail=f"Model '{model_name}' not found. Available models: {available_models}"
         )
     
     try:
-        print(f"📁 파일 업로드: {file.filename}")
+        print(f"\n=== Single Model Detection API Called ===")
+        print(f"Model: {model_name}")
+        print(f"File: {file.filename}")
+        
         os.makedirs("temp", exist_ok=True)
         image_path = f"temp/{file.filename}"
         
         with open(image_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
         
-        print(f"🔍 {model_name} 모델 단독 탐지 시작 (신뢰도: {confidence})")
+        print(f"Detecting with {model_name} model...")
         model = ensemble_models[model_name]
         detections, _ = detect_objects(model, image_path, confidence)
-        print(f"✅ {model_name} 탐지 완료: {len(detections)}개 객체")
+        print(f"Detection complete: {len(detections)} objects")
         
         try:
             os.remove(image_path)
@@ -520,13 +1277,16 @@ async def detect_food_single_model(model_name: str, file: UploadFile = File(...)
         }
         
     except Exception as e:
-        print(f"❌ {model_name} 탐지 오류: {e}")
+        print(f"\nERROR in detect_food_single_model:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"{model_name} 탐지 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"{model_name} detection error: {str(e)}")
 
 @app.get("/api/models/info")
 async def get_models_info():
-    """로드된 3가지 모델 정보 조회"""
+    print(f"\n=== Models Info API Called ===")
+    
     model_info = {}
     target_models = ["yolo11s", "best", "best_friged"]
     
@@ -574,48 +1334,45 @@ async def detect_food_custom_ensemble(
     best_friged_weight: float = 1.1,
     iou_threshold: float = 0.5
 ):
-    """커스텀 가중치로 3가지 모델 앙상블 탐지"""
     if not ensemble_models:
-        raise HTTPException(status_code=500, detail="YOLO 모델이 로드되지 않았습니다")
+        raise HTTPException(status_code=500, detail="YOLO models not loaded")
     
     try:
-        print(f"📁 파일 업로드: {file.filename}")
+        print(f"\n=== Custom Ensemble Detection API Called ===")
+        print(f"File: {file.filename}")
+        
         os.makedirs("temp", exist_ok=True)
         image_path = f"temp/{file.filename}"
         
         with open(image_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
         
-        # 커스텀 가중치 설정
         custom_weights = {
             'yolo11s': yolo11s_weight,
             'best': best_weight,
             'best_friged': best_friged_weight
         }
         
-        print(f"🤖 커스텀 가중치 앙상블 탐지 시작")
-        print(f"   가중치: {custom_weights}")
-        print(f"   IoU 임계값: {iou_threshold}")
+        print(f"Custom weights: {custom_weights}")
+        print(f"IoU threshold: {iou_threshold}")
         
-        # 각 모델별 탐지
         all_detections = {}
         for model_name, model in ensemble_models.items():
             try:
                 detections, _ = detect_objects(model, image_path, confidence)
                 all_detections[model_name] = detections
-                print(f"   {model_name}: {len(detections)}개 탐지")
+                print(f"{model_name}: {len(detections)} detections")
             except Exception as e:
-                print(f"   {model_name} 오류: {e}")
+                print(f"{model_name} error: {e}")
                 all_detections[model_name] = []
         
-        # 커스텀 앙상블 수행
         final_detections = ensemble_detections(
             all_detections, 
             iou_threshold=iou_threshold, 
             confidence_weights=custom_weights
         )
         
-        print(f"✅ 커스텀 앙상블 완료: {len(final_detections)}개 최종 객체")
+        print(f"Custom ensemble complete: {len(final_detections)} final objects")
         
         try:
             os.remove(image_path)
@@ -636,84 +1393,56 @@ async def detect_food_custom_ensemble(
         }
         
     except Exception as e:
-        print(f"❌ 커스텀 앙상블 오류: {e}")
+        print(f"\nERROR in detect_food_custom_ensemble:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"커스텀 앙상블 오류: {str(e)}")
-
-# ===== 기존 API 엔드포인트들 (OCR, Gemini) =====
-
-@app.post("/api/ocr")
-async def extract_ocr_text(file: UploadFile = File(...)):
-    """OCR 텍스트 추출"""
-    try:
-        print(f"📁 OCR 파일 업로드: {file.filename}")
-        os.makedirs("temp", exist_ok=True)
-        image_path = f"temp/{file.filename}"
-        
-        with open(image_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-        
-        print(f"📄 OCR 텍스트 추출 시작")
-        ocr_text = extract_text_with_ocr(image_path)
-        print(f"✅ OCR 완료: {len(ocr_text) if ocr_text else 0}자")
-        
-        try:
-            os.remove(image_path)
-        except:
-            pass
-        
-        return {"text": ocr_text}
-        
-    except Exception as e:
-        print(f"❌ OCR 오류: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"OCR 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Custom ensemble error: {str(e)}")
 
 @app.post("/api/analyze")
 async def analyze_with_gemini(request_data: dict):
-    """Gemini AI 분석"""
     try:
+        print(f"\n=== Gemini Analysis API Called ===")
+        
         text = request_data.get("text", "")
         detection_results = request_data.get("detection_results")
         
-        print(f"🧠 Gemini 분석 시작 - 텍스트 길이: {len(text)}")
+        print(f"Text length: {len(text)}")
+        print(f"Has detection results: {detection_results is not None}")
+        
         analysis = analyze_text_with_gemini(text, detection_results)
-        print(f"✅ Gemini 분석 완료")
+        print(f"Analysis complete")
         
         return {"analysis": analysis}
         
     except Exception as e:
-        print(f"❌ Gemini 분석 오류: {e}")
+        print(f"\nERROR in analyze_with_gemini:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Gemini 분석 오류: {str(e)}")
-
-# ===== MongoDB 냉장고 식재료 관리 API =====
+        raise HTTPException(status_code=500, detail=f"Gemini analysis error: {str(e)}")
 
 @app.post("/api/fridge/save")
 async def save_fridge_data(fridge_data: FridgeData):
-    """냉장고 식재료 데이터를 MongoDB에 저장"""
     if fridge_collection is None:
-        raise HTTPException(status_code=503, detail="MongoDB가 연결되지 않았습니다")
+        raise HTTPException(status_code=503, detail="MongoDB not connected")
     
     try:
-        print(f"💾 냉장고 데이터 저장 시작 - 사용자: {fridge_data.userId}")
-        print(f"🗄️ 저장 위치: {DB_NAME}.{COLLECTION_NAME}")
+        print(f"\n=== Fridge Save API Called ===")
+        print(f"User: {fridge_data.userId}")
+        print(f"Ingredients: {fridge_data.totalTypes} types, {fridge_data.totalCount} items")
         
-        # Pydantic V2 호환: model_dump() 사용
         ingredients_dict = [ingredient.model_dump() for ingredient in fridge_data.ingredients]
         
-        # MongoDB 연결 상태 확인
         try:
             await client.admin.command('ping')
-            print("✅ MongoDB 연결 상태 정상")
+            print("MongoDB connection OK")
         except Exception as conn_err:
-            print(f"❌ MongoDB 연결 확인 실패: {conn_err}")
-            raise HTTPException(status_code=503, detail="MongoDB 연결이 불안정합니다")
+            print(f"MongoDB connection check failed: {conn_err}")
+            raise HTTPException(status_code=503, detail="MongoDB connection unstable")
         
-        # 데이터 저장 (upsert: 없으면 생성, 있으면 업데이트)
         current_time = datetime.now().isoformat()
         
-        # $set에는 업데이트할 필드들만 포함 (createdAt 제외)
         update_document = {
             "userId": fridge_data.userId,
             "ingredients": ingredients_dict,
@@ -725,7 +1454,6 @@ async def save_fridge_data(fridge_data: FridgeData):
             "updatedAt": current_time
         }
         
-        # $setOnInsert에는 새 문서 생성 시에만 설정할 필드들
         insert_only_document = {
             "createdAt": current_time
         }
@@ -739,14 +1467,11 @@ async def save_fridge_data(fridge_data: FridgeData):
             upsert=True
         )
         
-        print(f"✅ MongoDB 저장 완료")
-        print(f"   - 사용자: {fridge_data.userId}")
-        print(f"   - 식재료: {fridge_data.totalTypes}종류 {fridge_data.totalCount}개")
-        print(f"   - 신규 생성: {result.upserted_id is not None}")
+        print(f"Save complete. New document: {result.upserted_id is not None}")
         
         return {
             "success": True,
-            "message": f"냉장고 데이터가 {DB_NAME}.{COLLECTION_NAME}에 성공적으로 저장되었습니다",
+            "message": f"Fridge data successfully saved to {DB_NAME}.{COLLECTION_NAME}",
             "userId": fridge_data.userId,
             "totalTypes": fridge_data.totalTypes,
             "totalCount": fridge_data.totalCount,
@@ -761,42 +1486,37 @@ async def save_fridge_data(fridge_data: FridgeData):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ MongoDB 저장 오류: {e}")
+        print(f"\nERROR in save_fridge_data:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"저장 중 오류 발생: {str(e)}")
-
-# ===== 간소화된 저장 API 엔드포인트 =====
+        raise HTTPException(status_code=500, detail=f"Save error: {str(e)}")
 
 @app.post("/api/fridge/save-simple")
 async def save_simple_fridge_data(fridge_data: SimpleFridgeData):
-    """간소화된 형식으로 냉장고 식재료 데이터를 MongoDB에 저장"""
     if fridge_collection is None:
-        raise HTTPException(status_code=503, detail="MongoDB가 연결되지 않았습니다")
+        raise HTTPException(status_code=503, detail="MongoDB not connected")
     
     try:
-        print(f"💾 간소화된 냉장고 데이터 저장 시작 - 사용자: {fridge_data.userId}")
-        print(f"🗄️ 저장 위치: {DB_NAME}.{COLLECTION_NAME}")
+        print(f"\n=== Simple Fridge Save API Called ===")
+        print(f"User: {fridge_data.userId}")
+        print(f"Ingredients: {len(fridge_data.ingredients)}")
         
-        # Pydantic V2 호환: model_dump() 사용
         ingredients_dict = [ingredient.model_dump() for ingredient in fridge_data.ingredients]
         
-        # MongoDB 연결 상태 확인
         try:
             await client.admin.command('ping')
-            print("✅ MongoDB 연결 상태 정상")
+            print("MongoDB connection OK")
         except Exception as conn_err:
-            print(f"❌ MongoDB 연결 확인 실패: {conn_err}")
-            raise HTTPException(status_code=503, detail="MongoDB 연결이 불안정합니다")
+            print(f"MongoDB connection check failed: {conn_err}")
+            raise HTTPException(status_code=503, detail="MongoDB connection unstable")
         
-        # 간소화된 데이터 저장 (사용자가 원하는 형식만)
         current_time = datetime.now().isoformat()
         
-        # $setOnInsert에는 새 문서 생성 시에만 설정할 필드들
         insert_only_document = {
             "createdAt": current_time
         }
         
-        # $set에는 업데이트할 필드들 (createdAt 제외)
         update_document = {
             "userId": fridge_data.userId,
             "ingredients": ingredients_dict,
@@ -812,15 +1532,11 @@ async def save_simple_fridge_data(fridge_data: SimpleFridgeData):
             upsert=True
         )
         
-        print(f"✅ 간소화된 MongoDB 저장 완료")
-        print(f"   - 사용자: {fridge_data.userId}")
-        print(f"   - 식재료: {len(fridge_data.ingredients)}개")
-        print(f"   - 신규 생성: {result.upserted_id is not None}")
-        print(f"   - 저장된 필드: userId, ingredients, createdAt")
+        print(f"Simple save complete. New document: {result.upserted_id is not None}")
         
         return {
             "success": True,
-            "message": f"간소화된 냉장고 데이터가 {DB_NAME}.{COLLECTION_NAME}에 성공적으로 저장되었습니다",
+            "message": f"Simplified fridge data successfully saved to {DB_NAME}.{COLLECTION_NAME}",
             "userId": fridge_data.userId,
             "totalIngredients": len(fridge_data.ingredients),
             "isNew": result.upserted_id is not None,
@@ -836,28 +1552,28 @@ async def save_simple_fridge_data(fridge_data: SimpleFridgeData):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ 간소화된 MongoDB 저장 오류: {e}")
+        print(f"\nERROR in save_simple_fridge_data:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"간소화된 저장 중 오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Simplified save error: {str(e)}")
 
 @app.get("/api/fridge/load/{user_id}")
 async def load_fridge_data(user_id: str):
-    """MongoDB에서 사용자별 냉장고 데이터 불러오기"""
     if fridge_collection is None:
-        raise HTTPException(status_code=503, detail="MongoDB가 연결되지 않았습니다")
+        raise HTTPException(status_code=503, detail="MongoDB not connected")
     
     try:
-        print(f"📥 냉장고 데이터 로드 시작 - 사용자: {user_id}")
-        print(f"🗄️ 검색 위치: {DB_NAME}.{COLLECTION_NAME}")
+        print(f"\n=== Fridge Load API Called ===")
+        print(f"User: {user_id}")
         
-        # MongoDB에서 사용자 데이터 검색
         fridge_data = await fridge_collection.find_one({"userId": user_id})
         
         if not fridge_data:
-            print(f"⚠️ 데이터 없음 - 사용자: {user_id}")
+            print(f"No data found for user: {user_id}")
             return {
                 "success": False,
-                "message": "저장된 냉장고 데이터가 없습니다",
+                "message": "No saved fridge data found",
                 "ingredients": [],
                 "totalTypes": 0,
                 "totalCount": 0,
@@ -867,16 +1583,13 @@ async def load_fridge_data(user_id: str):
                 }
             }
         
-        # _id 필드 제거 (JSON 직렬화를 위해)
         fridge_data.pop("_id", None)
         
-        print(f"✅ MongoDB 로드 완료")
-        print(f"   - 사용자: {user_id}")
-        print(f"   - 식재료: {fridge_data.get('totalTypes', 0)}종류")
+        print(f"Data loaded successfully")
         
         return {
             "success": True,
-            "message": f"{DB_NAME}.{COLLECTION_NAME}에서 데이터를 성공적으로 불러왔습니다",
+            "message": f"Data successfully loaded from {DB_NAME}.{COLLECTION_NAME}",
             "storage": {
                 "database": DB_NAME,
                 "collection": COLLECTION_NAME
@@ -885,68 +1598,63 @@ async def load_fridge_data(user_id: str):
         }
     
     except Exception as e:
-        print(f"❌ MongoDB 로드 오류: {e}")
+        print(f"\nERROR in load_fridge_data:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"데이터 로드 중 오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Load error: {str(e)}")
 
-# 간소화된 불러오기 API
 @app.get("/api/fridge/load-simple/{user_id}")
 async def load_simple_fridge_data(user_id: str):
-    """간소화된 형식으로 사용자별 냉장고 데이터 불러오기"""
     if fridge_collection is None:
-        raise HTTPException(status_code=503, detail="MongoDB가 연결되지 않았습니다")
+        raise HTTPException(status_code=503, detail="MongoDB not connected")
     
     try:
-        print(f"📥 간소화된 냉장고 데이터 로드 시작 - 사용자: {user_id}")
+        print(f"\n=== Simple Fridge Load API Called ===")
+        print(f"User: {user_id}")
         
-        # MongoDB에서 사용자 데이터 검색
         fridge_data = await fridge_collection.find_one({"userId": user_id})
         
         if not fridge_data:
-            print(f"⚠️ 데이터 없음 - 사용자: {user_id}")
+            print(f"No data found for user: {user_id}")
             return {
                 "success": False,
-                "message": "저장된 냉장고 데이터가 없습니다",
+                "message": "No saved fridge data found",
                 "ingredients": []
             }
         
-        # _id 필드 제거 (JSON 직렬화를 위해)
         fridge_data.pop("_id", None)
         
-        # 간소화된 형식으로 반환 (필요한 필드만)
         simplified_data = {
             "userId": fridge_data.get("userId"),
             "ingredients": fridge_data.get("ingredients", []),
             "createdAt": fridge_data.get("createdAt")
         }
         
-        print(f"✅ 간소화된 MongoDB 로드 완료")
-        print(f"   - 사용자: {user_id}")
-        print(f"   - 식재료: {len(simplified_data['ingredients'])}개")
+        print(f"Simple data loaded successfully")
         
         return {
             "success": True,
-            "message": f"간소화된 데이터를 {DB_NAME}.{COLLECTION_NAME}에서 성공적으로 불러왔습니다",
+            "message": f"Simplified data successfully loaded from {DB_NAME}.{COLLECTION_NAME}",
             **simplified_data
         }
     
     except Exception as e:
-        print(f"❌ 간소화된 MongoDB 로드 오류: {e}")
+        print(f"\nERROR in load_simple_fridge_data:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"간소화된 데이터 로드 중 오류 발생: {str(e)}")
-
-# ===== 버전3 데이터 마이그레이션 API =====
+        raise HTTPException(status_code=500, detail=f"Simplified load error: {str(e)}")
 
 @app.get("/api/fridge/load-v3/{user_id}")
 async def load_v3_fridge_data(user_id: str):
-    """버전3에서 저장된 냉장고 데이터를 현재 형식으로 변환하여 불러오기"""
     if fridge_collection is None:
-        raise HTTPException(status_code=503, detail="MongoDB가 연결되지 않았습니다")
+        raise HTTPException(status_code=503, detail="MongoDB not connected")
     
     try:
-        print(f"📥 버전3 데이터 로드 시작 - 사용자: {user_id}")
+        print(f"\n=== V3 Fridge Load API Called ===")
+        print(f"User: {user_id}")
         
-        # 여러 가능한 버전3 컬렉션/필드에서 데이터 검색
         v3_collections = [
             f"{COLLECTION_NAME}_v3",
             f"{COLLECTION_NAME}_old", 
@@ -958,7 +1666,6 @@ async def load_v3_fridge_data(user_id: str):
         v3_data = None
         found_collection = None
         
-        # 버전3 컬렉션들에서 데이터 검색
         for collection_name in v3_collections:
             try:
                 v3_collection = db[collection_name]
@@ -968,40 +1675,35 @@ async def load_v3_fridge_data(user_id: str):
                     found_collection = collection_name
                     break
             except Exception as e:
-                print(f"   컬렉션 {collection_name} 검색 실패: {e}")
+                print(f"Collection {collection_name} search failed: {e}")
                 continue
         
-        # 현재 컬렉션에서 이전 형식 데이터 검색
         if not v3_data:
             current_data = await fridge_collection.find_one({"userId": user_id})
             if current_data:
-                # 이미 현재 형식이면 그대로 반환
                 if "ingredients" in current_data and isinstance(current_data["ingredients"], list):
                     if current_data["ingredients"]:
-                        print(f"✅ 현재 컬렉션에서 데이터 발견: {len(current_data['ingredients'])}개")
+                        print(f"Found data in current collection")
                         return {
                             "success": True,
                             "data": current_data["ingredients"],
                             "source": "current_format",
                             "collection": COLLECTION_NAME,
-                            "message": "현재 형식의 데이터를 반환했습니다"
+                            "message": "Returned current format data"
                         }
                 
-                # 이전 형식일 수 있는 데이터 처리
                 v3_data = current_data
                 found_collection = COLLECTION_NAME
         
         if not v3_data:
             return {
                 "success": False,
-                "message": "버전3 또는 이전 형식의 데이터를 찾을 수 없습니다",
+                "message": "No v3 or previous format data found",
                 "searched_collections": v3_collections + [COLLECTION_NAME]
             }
         
-        # 버전3 데이터 변환
         v3_ingredients = None
         
-        # 다양한 필드명에서 재료 데이터 추출
         for field_name in ["ingredients", "data", "items", "foods", "detected_items"]:
             if field_name in v3_data and v3_data[field_name]:
                 v3_ingredients = v3_data[field_name]
@@ -1010,18 +1712,17 @@ async def load_v3_fridge_data(user_id: str):
         if not v3_ingredients:
             return {
                 "success": False,
-                "message": "버전3 데이터에서 식재료 정보를 찾을 수 없습니다",
+                "message": "No ingredient data found in v3 data",
                 "available_fields": list(v3_data.keys()),
                 "source_collection": found_collection
             }
         
-        # 현재 형식으로 변환
         converted_data = convert_v3_to_current_format(v3_ingredients)
         
-        print(f"✅ 버전3 데이터 변환 완료")
-        print(f"   - 원본: {len(v3_ingredients)}개 항목")
-        print(f"   - 변환: {len(converted_data)}개 항목") 
-        print(f"   - 출처: {found_collection}")
+        print(f"V3 data conversion complete")
+        print(f"  Original: {len(v3_ingredients)} items")
+        print(f"  Converted: {len(converted_data)} items") 
+        print(f"  Source: {found_collection}")
         
         return {
             "success": True,
@@ -1030,36 +1731,36 @@ async def load_v3_fridge_data(user_id: str):
             "collection": found_collection,
             "original_count": len(v3_ingredients),
             "converted_count": len(converted_data),
-            "message": f"버전3 데이터를 성공적으로 변환했습니다 ({found_collection})"
+            "message": f"V3 data successfully converted ({found_collection})"
         }
         
     except Exception as e:
-        print(f"❌ 버전3 데이터 로드 오류: {e}")
+        print(f"\nERROR in load_v3_fridge_data:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"버전3 데이터 로드 중 오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"V3 data load error: {str(e)}")
 
 @app.post("/api/fridge/migrate-v3/{user_id}")
 async def migrate_v3_to_current(user_id: str):
-    """버전3 데이터를 찾아서 현재 형식으로 마이그레이션"""
     if fridge_collection is None:
-        raise HTTPException(status_code=503, detail="MongoDB가 연결되지 않았습니다")
+        raise HTTPException(status_code=503, detail="MongoDB not connected")
     
     try:
-        print(f"🔄 버전3 데이터 마이그레이션 시작 - 사용자: {user_id}")
+        print(f"\n=== V3 Migration API Called ===")
+        print(f"User: {user_id}")
         
-        # 버전3 데이터 불러오기
         v3_response = await load_v3_fridge_data(user_id)
         
         if not v3_response["success"]:
             return {
                 "success": False,
-                "message": "마이그레이션할 버전3 데이터가 없습니다",
+                "message": "No v3 data to migrate",
                 "details": v3_response
             }
         
         converted_data = v3_response["data"]
         
-        # 현재 형식으로 저장
         current_time = datetime.now().isoformat()
         
         migration_document = {
@@ -1080,20 +1781,19 @@ async def migrate_v3_to_current(user_id: str):
             "createdAt": current_time
         }
         
-        # 기존 데이터 덮어쓰기
         result = await fridge_collection.replace_one(
             {"userId": user_id},
             migration_document,
             upsert=True
         )
         
-        print(f"✅ 버전3 데이터 마이그레이션 완료")
-        print(f"   - 변환된 항목: {len(converted_data)}개")
-        print(f"   - 저장 위치: {DB_NAME}.{COLLECTION_NAME}")
+        print(f"V3 migration complete")
+        print(f"  Converted items: {len(converted_data)}")
+        print(f"  Save location: {DB_NAME}.{COLLECTION_NAME}")
         
         return {
             "success": True,
-            "message": "버전3 데이터를 현재 형식으로 성공적으로 마이그레이션했습니다",
+            "message": "V3 data successfully migrated to current format",
             "migrationInfo": {
                 "userId": user_id,
                 "sourceCollection": v3_response["collection"],
@@ -1106,21 +1806,31 @@ async def migrate_v3_to_current(user_id: str):
         }
         
     except Exception as e:
-        print(f"❌ 버전3 마이그레이션 오류: {e}")
+        print(f"\nERROR in migrate_v3_to_current:")
+        print(f"Type: {type(e).__name__}")
+        print(f"Message: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"마이그레이션 중 오류 발생: {str(e)}")
-
-# ===== 시스템 상태 확인 API =====
+        raise HTTPException(status_code=500, detail=f"Migration error: {str(e)}")
 
 @app.get("/health")
 async def health_check():
-    """전체 시스템 상태 확인"""
+    print(f"\n=== Health Check API Called ===")
+    
     mongodb_status = "connected" if fridge_collection is not None else "disconnected"
     
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "version": "3.0.0 - 3-Model Ensemble + V3 Migration + Simple Save",
+        "version": "4.0.0 - Enhanced OCR Inference + Web Search + 3-Model Ensemble - DEBUG",
+        "features": [
+            "3-Model YOLO Ensemble",
+            "Enhanced OCR Inference with Pattern Matching",
+            "Google Custom Search Integration", 
+            "Ingredient Validation API",
+            "MongoDB Storage",
+            "V3 Data Migration",
+            "Simple Save Format"
+        ],
         "services": {
             "ensemble_models": {
                 "target_models": ["yolo11s", "best", "best_friged"],
@@ -1133,6 +1843,10 @@ async def health_check():
             "mongodb": mongodb_status,
             "ocr": "configured" if os.environ.get('CLOVA_OCR_API_URL') else "not_configured",
             "gemini": "configured" if os.environ.get('GEMINI_API_KEY') else "not_configured",
+            "google_search": "configured" if os.environ.get('GOOGLE_API_KEY') else "mock_mode",
+            "enhanced_ocr": "available",
+            "pattern_matching": "available",
+            "web_search": "available",
             "v3_migration": "available",
             "simple_save": "available"
         },
@@ -1143,26 +1857,54 @@ async def health_check():
         },
         "temp_dir_exists": os.path.exists("temp"),
         "missing_models": [name for name in ["yolo11s", "best", "best_friged"] if name not in ensemble_models],
-        "new_features": [
-            "V3 데이터 마이그레이션 지원",
-            "3가지 YOLO 모델 앙상블",
-            "커스텀 가중치 앙상블",
-            "MongoDB 냉장고 데이터 관리",
-            "간소화된 저장 형식 지원 (/api/fridge/save-simple)"
-        ]
+        "enhanced_features": [
+            "Pattern-based ingredient inference",
+            "Google Custom Search integration",
+            "Keyword extraction and summary",
+            "Ingredient name validation API",
+            "Enhanced debugging system"
+        ],
+        "debug_info": {
+            "working_directory": os.getcwd(),
+            "python_version": sys.version,
+            "models_loaded": len(ensemble_models),
+            "directories": {
+                "models": os.path.exists("models"),
+                "modules": os.path.exists("modules"),
+                "temp": os.path.exists("temp")
+            }
+        }
     }
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 3-Model Ensemble Food Detection API + V3 Migration + Simple Save 서버 시작 중...")
-    print(f"📍 서버 주소: http://0.0.0.0:8000")
-    print(f"📋 API 문서: http://0.0.0.0:8000/docs")
-    print(f"🤖 타겟 앙상블 모델: yolo11s.pt, best.pt, best_friged.pt")
-    print(f"🤖 로드된 모델: {list(ensemble_models.keys())} ({len(ensemble_models)}/3)")
-    print(f"🔗 MongoDB 연결: {'✅ 성공' if fridge_collection is not None else '❌ 실패'}")
-    print(f"🗄️ 저장 위치: {DB_NAME}.{COLLECTION_NAME}")
-    print(f"🔄 V3 마이그레이션: ✅ 지원됨")
-    print(f"💾 간소화된 저장: ✅ /api/fridge/save-simple")
+    
+    print("\n" + "=" * 60)
+    print("STARTING ENHANCED FOOD DETECTION API - DEBUG VERSION")
+    print("=" * 60)
+    print(f"Server address: http://0.0.0.0:8080")
+    print(f"API docs: http://0.0.0.0:8080/docs")
+    print(f"Health check: http://0.0.0.0:8080/health")
+    print(f"Target ensemble models: yolo11s.pt, best.pt, best_friged.pt")
+    print(f"Loaded models: {list(ensemble_models.keys())} ({len(ensemble_models)}/3)")
+    print(f"MongoDB connection: {'Success' if fridge_collection is not None else 'Failed'}")
+    print(f"Save location: {DB_NAME}.{COLLECTION_NAME}")
+    
     if len(ensemble_models) < 3:
-        print(f"⚠️ 경고: 3개 모델 중 {len(ensemble_models)}개만 로드됨")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+        print(f"\n⚠️  WARNING: Only {len(ensemble_models)} of 3 models loaded")
+        print("This will cause issues with ensemble detection!")
+    
+    if len(ensemble_models) == 0:
+        print("\n❌ CRITICAL: No models loaded!")
+        print("The /api/detect endpoint will return 500 errors!")
+        print("\nTo fix this:")
+        print("1. Create 'models' directory: mkdir models")
+        print("2. Add model files: yolo11s.pt, best.pt, best_friged.pt")
+        print("3. Create modules/yolo_detector.py with load_yolo_model function")
+        print("4. Install dependencies: pip install ultralytics torch")
+    
+    print("\n" + "=" * 60)
+    print("Server is starting...")
+    print("=" * 60 + "\n")
+    
+    uvicorn.run(app, host="0.0.0.0", port=8080)

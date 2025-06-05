@@ -1,5 +1,4 @@
-# 
-
+# modules/gemini.py
 
 import os
 import requests
@@ -89,22 +88,28 @@ def detect_brand_and_product(text):
 def analyze_text_with_gemini(text, detection_results=None):
     """개선된 Gemini 함수 - 유통 중인 식품명 우선 추론"""
     if not text or text.strip() == "":
-        print("분석할 텍스트가 없습니다.")
+        print("📝 분석할 텍스트가 없습니다.")
         return None
     
     try:
-        print(f"Gemini 분석 시작 - 텍스트 길이: {len(text)}")
-        print(f"API Key 존재: {bool(GEMINI_API_KEY)}")
+        print(f"🧠 Gemini 분석 시작 - 텍스트 길이: {len(text)}")
+        print(f"🔑 API Key 존재: {bool(GEMINI_API_KEY)}")
+        
+        # 환경 변수 확인
+        if not GEMINI_API_KEY:
+            print("❌ GEMINI_API_KEY가 설정되지 않았습니다")
+            print("   환경 변수를 확인하세요: GEMINI_API_KEY")
+            return None
         
         # 1단계: 직접 브랜드/제품명 탐지
         detected_brand, detected_product = detect_brand_and_product(text)
         brand_context = ""
         if detected_brand and detected_product:
             brand_context = f"\n\n중요: 텍스트에서 '{detected_brand} {detected_product}' 브랜드/제품이 직접 탐지되었습니다. 이를 최우선으로 고려하세요."
-            print(f"직접 탐지된 브랜드/제품: {detected_brand} {detected_product}")
+            print(f"🔍 직접 탐지된 브랜드/제품: {detected_brand} {detected_product}")
         elif detected_brand:
             brand_context = f"\n\n중요: 텍스트에서 '{detected_brand}' 브랜드가 탐지되었습니다."
-            print(f"직접 탐지된 브랜드: {detected_brand}")
+            print(f"🔍 직접 탐지된 브랜드: {detected_brand}")
         
         # 탐지 결과가 있으면 컨텍스트에 포함
         detection_context = ""
@@ -168,7 +173,7 @@ def analyze_text_with_gemini(text, detection_results=None):
         # API 요청 데이터를 JSON으로 직접 직렬화하여 인코딩 문제 방지
         json_data = json.dumps(request_data, ensure_ascii=False).encode('utf-8')
         
-        print("Gemini API 요청 전송 중...")
+        print("📤 Gemini API 요청 전송 중...")
         
         # API 요청 보내기 (data 파라미터 사용)
         response = requests.post(
@@ -178,7 +183,7 @@ def analyze_text_with_gemini(text, detection_results=None):
             timeout=30  # 30초 타임아웃
         )
         
-        print(f"Gemini API 응답 상태 코드: {response.status_code}")
+        print(f"📥 Gemini API 응답 상태 코드: {response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
@@ -187,42 +192,51 @@ def analyze_text_with_gemini(text, detection_results=None):
                     content = result['candidates'][0]['content']
                     if 'parts' in content and len(content['parts']) > 0:
                         inference_result = content['parts'][0]['text']
-                        print(f"Gemini API 추론 결과: {inference_result}")
+                        print(f"🎯 Gemini API 추론 결과: {inference_result}")
                         
                         # 결과 후처리 - 첫 번째 줄만 추출하여 식품명만 반환
                         food_name = extract_food_name_from_result(inference_result, detected_brand, detected_product)
-                        print(f"추출된 식품명: {food_name}")
+                        print(f"✅ 추출된 식품명: {food_name}")
                         
                         return food_name
         
-        print(f"Gemini API 오류 - 상태 코드: {response.status_code}")
-        print(f"응답 내용: {response.text}")
+        print(f"❌ Gemini API 오류 - 상태 코드: {response.status_code}")
+        try:
+            error_detail = response.json()
+            print(f"📋 오류 상세: {error_detail}")
+        except:
+            print(f"📋 응답 내용: {response.text}")
         
         # API 실패 시 직접 탐지된 결과 반환
         if detected_brand and detected_product:
             fallback_result = f"{detected_brand} {detected_product}"
-            print(f"API 실패로 직접 탐지 결과 반환: {fallback_result}")
+            print(f"🔄 API 실패로 직접 탐지 결과 반환: {fallback_result}")
             return fallback_result
         
         return None
         
     except requests.exceptions.Timeout:
-        print("Gemini API 타임아웃 (30초)")
+        print("⏰ Gemini API 타임아웃 (30초)")
         # 타임아웃 시에도 직접 탐지 결과 반환
         detected_brand, detected_product = detect_brand_and_product(text)
         if detected_brand and detected_product:
             return f"{detected_brand} {detected_product}"
         return None
+    except requests.exceptions.ConnectionError:
+        print("🌐 Gemini API 연결 오류")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"📡 Gemini API 요청 오류: {e}")
+        return None
     except Exception as e:
-        print(f"Gemini API 분석 중 오류 발생: {e}")
-        print(f"오류 세부 정보: {type(e).__name__}, {str(e)}")
+        print(f"❌ Gemini API 분석 중 예상치 못한 오류: {e}")
+        print(f"🔍 오류 세부 정보: {type(e).__name__}, {str(e)}")
         traceback.print_exc()
         # 오류 시에도 직접 탐지 결과 반환
         detected_brand, detected_product = detect_brand_and_product(text)
         if detected_brand and detected_product:
             return f"{detected_brand} {detected_product}"
         return None
-
 
 def extract_food_name_from_result(result_text, detected_brand=None, detected_product=None):
     """Gemini 결과에서 식품명만 추출하는 함수 - 브랜드/제품명 우선"""
@@ -271,21 +285,25 @@ def extract_food_name_from_result(result_text, detected_brand=None, detected_pro
         return first_line if first_line else None
         
     except Exception as e:
-        print(f"식품명 추출 중 오류: {e}")
+        print(f"❌ 식품명 추출 중 오류: {e}")
         # 오류 시 직접 탐지된 결과 사용
         if detected_brand and detected_product:
             return f"{detected_brand} {detected_product}"
         return result_text
 
-
 def analyze_text_with_gemini_detailed(text, detection_results=None):
     """상세한 분석이 필요한 경우를 위한 함수 - 브랜드/제품명 우선"""
     if not text or text.strip() == "":
-        print("분석할 텍스트가 없습니다.")
+        print("📝 분석할 텍스트가 없습니다.")
         return None
     
     try:
-        print(f"Gemini 상세 분석 시작 - 텍스트 길이: {len(text)}")
+        print(f"🧠 Gemini 상세 분석 시작 - 텍스트 길이: {len(text)}")
+        
+        # 환경 변수 확인
+        if not GEMINI_API_KEY:
+            print("❌ GEMINI_API_KEY가 설정되지 않았습니다")
+            return None
         
         # 직접 브랜드/제품명 탐지
         detected_brand, detected_product = detect_brand_and_product(text)
@@ -354,7 +372,7 @@ def analyze_text_with_gemini_detailed(text, detection_results=None):
                     content = result['candidates'][0]['content']
                     if 'parts' in content and len(content['parts']) > 0:
                         inference_result = content['parts'][0]['text']
-                        print(f"Gemini API 상세 분석 결과: {inference_result}")
+                        print(f"📊 Gemini API 상세 분석 결과: {inference_result}")
                         return inference_result
         
         # API 실패 시 직접 탐지된 결과로 기본 JSON 생성
@@ -372,12 +390,10 @@ def analyze_text_with_gemini_detailed(text, detection_results=None):
         return None
         
     except Exception as e:
-        print(f"Gemini API 상세 분석 중 오류 발생: {e}")
+        print(f"❌ Gemini API 상세 분석 중 오류 발생: {e}")
         traceback.print_exc()
         return None
 
-
-# 테스트 함수
 def test_brand_detection():
     """브랜드/제품명 탐지 테스트"""
     test_texts = [
@@ -395,5 +411,25 @@ def test_brand_detection():
         print(f"탐지 결과: 브랜드={brand}, 제품={product}")
         print("-" * 50)
 
+def test_gemini_setup():
+    """Gemini 설정 테스트"""
+    print("🧪 Gemini 설정 테스트")
+    print(f"   GEMINI_API_KEY: {bool(GEMINI_API_KEY)}")
+    
+    if GEMINI_API_KEY:
+        print("✅ Gemini 설정이 완료되었습니다")
+        return True
+    else:
+        print("❌ Gemini 설정이 누락되었습니다")
+        print("   .env 파일에 다음을 추가하세요:")
+        print("   GEMINI_API_KEY=your_api_key")
+        return False
+
 if __name__ == "__main__":
+    print("🧪 Gemini 모듈 테스트")
+    
+    # 설정 테스트
+    test_gemini_setup()
+    
+    # 브랜드 탐지 테스트
     test_brand_detection()
