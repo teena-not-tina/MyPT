@@ -69,6 +69,72 @@ function ChatbotPage() {
     scrollToBottom();
   }, [messages, isPdfAnalyzing]);
 
+  // 루틴 JSON 렌더링 함수
+  const renderRoutine = (routineObj) => {
+    if (typeof routineObj === "string") {
+      // 루틴이 텍스트 형태일 경우 그대로 출력
+      return <pre>{routineObj}</pre>;
+    }
+    let routines = routineObj;
+    if (routineObj && typeof routineObj === "object" && Array.isArray(routineObj.routines)) {
+      routines = routineObj.routines;
+    }
+    if (!Array.isArray(routines)) return null;
+    return (
+      <div className="routine-list">
+        {routines.map((day, idx) => (
+          <div key={idx} className="routine-day-card">
+            <h4>{day.title || `Day ${day.day}`}</h4>
+            <ul>
+              {day.exercises.map((ex, exIdx) => (
+                <li key={exIdx}>
+                  <strong>{ex.name}</strong>
+                  <ul>
+                    {ex.sets.map((set, setIdx) => (
+                      <li key={setIdx}>
+                        {set.reps ? `${set.reps}회` : ""}
+                        {set.weight ? ` / ${set.weight}kg` : ""}
+                        {set.time ? ` / ${set.time}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // 메시지 렌더링
+  const renderMessage = (msg) => {
+    if (msg.type === "user-info" && msg.text) {
+      return (
+        <div className="user-info-summary">
+          <strong>분석된 사용자 정보:</strong>
+          <pre>{JSON.stringify(msg.text, null, 2)}</pre>
+        </div>
+      );
+    }
+    // routine-json 타입이거나, routines 키가 있는 객체면 목록 렌더링
+    if (
+      (msg.type === "routine-json" && msg.text) ||
+      (msg.text && typeof msg.text === "object" && msg.text.routines)
+    ) {
+      return renderRoutine(msg.text);
+    }
+    // JSON 문자열이지만 type이 text인 경우도 파싱 시도
+    if (msg.type === "text" && typeof msg.text === "string") {
+      try {
+        const parsed = JSON.parse(msg.text);
+        if (parsed && parsed.routines) return renderRoutine(parsed);
+        if (Array.isArray(parsed)) return renderRoutine(parsed);
+      } catch (e) { /* 무시 */ }
+    }
+    return <p>{msg.text}</p>;
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (inputMessage.trim() === '' || isLoading || isPdfAnalyzing) return;
@@ -81,91 +147,6 @@ function ChatbotPage() {
     };
     setMessages((prev) => [...prev, userMsg]);
     setIsLoading(true);
-
-    // 인바디 정보 수집 프로세스
-    if (collectingInbody) {
-      const currentQ = inbodyQuestions[inbodyStep];
-      setInbodyData((prev) => ({ ...prev, [currentQ.key]: inputMessage.trim() }));
-      if (inbodyStep < inbodyQuestions.length - 1) {
-        setInbodyStep(inbodyStep + 1);
-        setMessages((prev) => [
-          ...prev,
-          { id: Date.now() + Math.random(), sender: 'bot', text: inbodyQuestions[inbodyStep + 1].text, type: 'text' }
-        ]);
-        setIsLoading(false);
-      } else {
-        setCollectingInbody(false);
-        setCollectingWorkout(true);
-        setWorkoutStep(0);
-        setMessages((prev) => [
-          ...prev,
-          { id: Date.now() + Math.random(), sender: 'bot', text: workoutQuestions[0].text, type: 'text' }
-        ]);
-        setIsLoading(false);
-      }
-      setInputMessage('');
-      return;
-    }
-
-    // 운동 정보 수집 프로세스
-    if (collectingWorkout) {
-      const currentQ = workoutQuestions[workoutStep];
-      setWorkoutData((prev) => ({ ...prev, [currentQ.key]: inputMessage.trim() }));
-      if (workoutStep < workoutQuestions.length - 1) {
-        setWorkoutStep(workoutStep + 1);
-        setMessages((prev) => [
-          ...prev,
-          { id: Date.now() + Math.random(), sender: 'bot', text: workoutQuestions[workoutStep + 1].text, type: 'text' }
-        ]);
-        setIsLoading(false);
-      } else {
-        setCollectingWorkout(false);
-        setMessages((prev) => [
-          ...prev,
-          { id: Date.now() + Math.random(), sender: 'bot', text: '입력해주셔서 감사합니다! 맞춤형 운동 루틴을 준비할게요.', type: 'text' }
-        ]);
-        setIsLoading(false);
-      }
-      setInputMessage('');
-      return;
-    }
-
-    // "인바디 정보" 요구 감지 (예시: 키워드 포함 여부)
-    if (inputMessage.includes('인바디') || inputMessage.toLowerCase().includes('inbody')) {
-      setMessages((prev) => [
-        ...prev,
-        { id: Date.now() + Math.random(), sender: 'bot', text: 'inbody pdf나 이미지 파일이 있으신가요? (있으면 "있다", 없으면 "없다"라고 입력해 주세요.)', type: 'text', showFileUpload: false }
-      ]);
-      setInputMessage('');
-      setIsLoading(false);
-      return;
-    }
-
-    // 파일 업로드 여부 응답 처리
-    if (inputMessage === '있다') {
-      setShowFileUpload(true);
-      setMessages((prev) => [
-        ...prev,
-        { id: Date.now() + Math.random(), sender: 'bot', text: '파일을 업로드해 주세요.', type: 'text', showFileUpload: true }
-      ]);
-      setInputMessage('');
-      setIsLoading(false);
-      return;
-    }
-    if (
-      inputMessage === '없다' ||
-      ['아니오', '없음', '없어요', '노', 'no', 'x', '없습니다'].some(v => inputMessage.replace(/\s/g, '').toLowerCase().includes(v))
-    ) {
-      setCollectingInbody(true);
-      setInbodyStep(0);
-      setMessages((prev) => [
-        ...prev,
-        { id: Date.now() + Math.random(), sender: 'bot', text: inbodyQuestions[0].text, type: 'text' }
-      ]);
-      setInputMessage('');
-      setIsLoading(false);
-      return;
-    }
 
     // 기본: 서버에 메시지 전송
     try {
@@ -211,23 +192,47 @@ function ChatbotPage() {
       { id: Date.now() + Math.random(), sender: 'user', text: file ? file.name : '파일 없음', type: 'text' },
       { id: Date.now() + Math.random(), sender: 'bot', text: '파일이 업로드되었습니다. 분석을 시작합니다.', type: 'text' }
     ]);
-
-    // 실제 파일 업로드 및 분석+루틴 추천 요청
     try {
       const formData = new FormData();
       formData.append('file', file);
 
-      // 백엔드에 파일 업로드 및 분석+루틴 추천 요청 (엔드포인트는 실제 API에 맞게 수정)
       const res = await fetch('http://localhost:8000/api/inbody/upload_and_recommend', {
         method: 'POST',
         body: formData,
       });
       const data = await res.json();
 
-      setMessages((prev) => [
-        ...prev,
-        { id: Date.now() + Math.random(), sender: 'bot', text: data.result, type: 'text' }
-      ]);
+      // 1. 사용자 정보 요약 출력
+      if (data.result && data.result.user_info) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now() + Math.random(),
+            sender: 'bot',
+            text: data.result.user_info,
+            type: 'user-info'
+          }
+        ]);
+      }
+      // 2. 루틴 목록 출력
+      if (data.result && data.result.routines) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now() + Math.random(),
+            sender: 'bot',
+            text: data.result.routines, // routines만 넘김
+            type: 'routine-json'
+          }
+        ]);
+      }
+      // 3. 에러 처리
+      if (data.result && data.result.error) {
+        setMessages((prev) => [
+          ...prev,
+          { id: Date.now() + Math.random(), sender: 'bot', text: data.result.error, type: 'text' }
+        ]);
+      }
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -243,7 +248,7 @@ function ChatbotPage() {
       <div className="chatbot-messages-area">
         {messages.map((msg) => (
           <div key={msg.id} className={`message-bubble ${msg.sender}`}>
-            {msg.type === 'text' && <p>{msg.text}</p>}
+            {renderMessage(msg)}
             {/* 파일 업로드 UI를 챗봇 말풍선 안에 표시 */}
             {msg.showFileUpload && (
               <input type="file" accept="application/pdf,image/*" onChange={handleFileChange} />

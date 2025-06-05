@@ -163,3 +163,21 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* 루틴 카드 스타일 */
+.routine-list {
+  margin: 1rem 0;
+}
+.routine-day-card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #fafbfc;
+}
+.routine-day-card h4 {
+  margin-top: 0;
+}
+.routine-day-card ul {
+  margin: 0.5rem 0 0 1rem;
+}
