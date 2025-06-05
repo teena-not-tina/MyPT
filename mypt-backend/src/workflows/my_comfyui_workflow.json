@@ -10,7 +10,7 @@
   },
   "2": {
     "inputs": {
-      "text": "cute chibi character with tomato body, small limbs, big head, full body",
+      "text": "cute chibi character decorated with strawberry, existing character preserved, same pose and face, blended with realistic strawberry texture, kawaii style, soft shading, harmonious merge",
       "clip": [
         "1",
         1
@@ -34,17 +34,6 @@
       "title": "CLIP 텍스트 인코딩 (프롬프트)"
     }
   },
-  "4": {
-    "inputs": {
-      "width": 512,
-      "height": 512,
-      "batch_size": 1
-    },
-    "class_type": "EmptyLatentImage",
-    "_meta": {
-      "title": "빈 잠재 이미지"
-    }
-  },
   "5": {
     "inputs": {
       "seed": 148558244159551,
@@ -52,7 +41,7 @@
       "cfg": 25,
       "sampler_name": "euler",
       "scheduler": "karras",
-      "denoise": 0.45000000000000007,
+      "denoise": 0.7,
       "model": [
         "1",
         0
@@ -65,8 +54,10 @@
         "3",
         0
       ],
-      "latent_image": ["4", 0]
-
+      "latent_image": [
+        "11",
+        0
+      ]
     },
     "class_type": "KSampler",
     "_meta": {
@@ -102,28 +93,16 @@
     "_meta": {
       "title": "이미지 저장"
     }
-  }
-
-,
-  "8": {
-    "inputs": {
-      "grow_mask_by": 5
-    },
-    "class_type": "VAEEncodeForInpaint",
-    "_meta": {
-      "title": "VAE 인코드 (인페인팅용)"
-    }
   },
   "9": {
-  "inputs": {
-    "image": "C:\\Users\\702-18\\Desktop\\mypt-main1\\mypt-frontend\\src\\assets\\images\\chibi_avatar.png"
+    "inputs": {
+      "image": "C:\\Users\\702-18\\Desktop\\mypt-main1\\mypt-frontend\\src\\assets\\images\\chibi_avatar.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "이미지 로드"
+    }
   },
-  "class_type": "LoadImage",
-  "_meta": {
-    "title": "이미지 로드"
-  }
-}
-,
   "11": {
     "inputs": {
       "pixels": [

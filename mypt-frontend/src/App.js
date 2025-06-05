@@ -2,6 +2,8 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import useAuthStore from './stores/authStore';
+import { ImageProvider } from './contexts/ImageContext';
+import Profile from './components/Profile';
 
 // --- 페이지 컴포넌트 임포트 ---
 import SplashPage from './pages/Auth/SplashPage'; // ⭐️⭐️⭐️ SplashPage 다시 임포트 ⭐️⭐️⭐️
@@ -55,37 +57,40 @@ function App() {
   }, [checkAuth]);
 
   return (
-    <Router>
-      <div className="app-container">
-        {/* Header는 ChatbotPage에서 사용되므로 여기서는 주석 처리 유지 */}
-        {/* <Header /> */}
+    <ImageProvider>
+      <Router>
+        <div className="app-container">
+          {/* Header는 ChatbotPage에서 사용되므로 여기서는 주석 처리 유지 */}
+          {/* <Header /> */}
 
-        <Routes>
-          {/* ⭐️⭐️⭐️ 앱 시작 라우트를 SplashPage로 설정 ⭐️⭐️⭐️ */}
-          <Route path="/" element={<SplashPage />} /> 
+          <Routes>
+            {/* ⭐️⭐️⭐️ 앱 시작 라우트를 SplashPage로 설정 ⭐️⭐️⭐️ */}
+            <Route path="/" element={<SplashPage />} /> 
 
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
-          
-          {/* PrivateRoute가 필요한 라우트들 */}
-          {/* DashboardPage는 이제 /dashboard 경로로 접근해야 합니다. */}
-          <Route path="/onboarding/inbody" element={<PrivateRoute><InbodyFormPage /></PrivateRoute>} />
-          <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} /> 
-          <Route path="/routine" element={<PrivateRoute><RoutineOverviewPage /></PrivateRoute>} />
-          <Route path="/routine/:id" element={<PrivateRoute><RoutineDetailPage /></PrivateRoute>} />
-          <Route path="/routine/:id/analyze" element={<PrivateRoute><ExerciseCameraPage /></PrivateRoute>} />
-          <Route path="/diet/ingredients" element={<PrivateRoute><IngredientInputPage /></PrivateRoute>} /> 
-          <Route path="/diet/menu" element={<PrivateRoute><MenuRecommendationPage /></PrivateRoute>} />   
-          <Route path="/chatbot" element={<PrivateRoute><ChatbotPage /></PrivateRoute>} />         
-          <Route path="/avatar" element={<PrivateRoute><AvatarProgressPage /></PrivateRoute>} /> 
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/signup" element={<SignupPage />} />
+            
+            {/* PrivateRoute가 필요한 라우트들 */}
+            {/* DashboardPage는 이제 /dashboard 경로로 접근해야 합니다. */}
+            <Route path="/onboarding/inbody" element={<PrivateRoute><InbodyFormPage /></PrivateRoute>} />
+            <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} /> 
+            <Route path="/routine" element={<PrivateRoute><RoutineOverviewPage /></PrivateRoute>} />
+            <Route path="/routine/:id" element={<PrivateRoute><RoutineDetailPage /></PrivateRoute>} />
+            <Route path="/routine/:id/analyze" element={<PrivateRoute><ExerciseCameraPage /></PrivateRoute>} />
+            <Route path="/diet/ingredients" element={<PrivateRoute><IngredientInputPage /></PrivateRoute>} /> 
+            <Route path="/diet/menu" element={<PrivateRoute><MenuRecommendationPage /></PrivateRoute>} />   
+            <Route path="/chatbot" element={<PrivateRoute><ChatbotPage /></PrivateRoute>} />         
+            <Route path="/avatar" element={<PrivateRoute><AvatarProgressPage /></PrivateRoute>} /> 
 
-          {/* NotFoundPage는 항상 마지막에 배치 */}
-          <Route path="*" element={<NotFoundPage />} /> 
-        </Routes>
+            {/* NotFoundPage는 항상 마지막에 배치 */}
+            <Route path="*" element={<NotFoundPage />} /> 
+          </Routes>
 
-        <ConditionalNavbar />
-      </div>
-    </Router>
+          <ConditionalNavbar />
+          <Profile />
+        </div>
+      </Router>
+    </ImageProvider>
   );
 }
 

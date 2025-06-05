@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../../styles/global.css';
 import './DashboardPage.css';
-import ChibiAvatar from '../../assets/images/chibi_avatar.png';
+import chibiAvatar from '../../assets/images/chibi_avatar.png';
 
 function DashboardPage() {
   const navigate = useNavigate();
@@ -78,7 +78,7 @@ function DashboardPage() {
         <div className="character-placeholder" onClick={handleAvatarClick}> {/* CSS의 .character-placeholder 적용 */}
           {/* ⭐️⭐️⭐️ 이미지 삽입 ⭐️⭐️⭐️ */}
           <img
-            src={profileImage ? `data:image/png;base64,${profileImage}` : ChibiAvatar}
+            src={profileImage ? `data:image/png;base64,${profileImage}` : chibiAvatar}
             alt="내 아바타"
             className="character-image" // CSS의 .character-image 적용
           />
