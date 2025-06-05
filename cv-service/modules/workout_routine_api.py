@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from bson import ObjectId
 import os
 from datetime import datetime
+from typing import Union
 
 router = APIRouter(prefix="/api/workout", tags=["workout"])
 
@@ -97,11 +98,12 @@ async def test_connection(db: AsyncIOMotorDatabase = Depends(get_database)):
 # API Endpoints
 @router.get("/routines")
 async def get_all_routines(
-    user_id: int = Query(...),  # 쿼리 파라미터로 user_id 받기
+    user_id: Union[str, int] = Query(...),
     db: AsyncIOMotorDatabase = Depends(get_database)
 ):
+    user_id_str = str(user_id)
     routines = []
-    async for routine in db.routines.find({"user_id": user_id}):
+    async for routine in db.routines.find({"user_id": {"$in": [user_id, user_id_str, int(user_id_str) if user_id_str.isdigit() else None]}}):
         routines.append(routine_helper(routine))
     return routines
 
