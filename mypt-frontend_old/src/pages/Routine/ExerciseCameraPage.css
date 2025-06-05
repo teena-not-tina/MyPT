@@ -1,0 +1,90 @@
+/* src/pages/Routine/ExerciseCameraPage.css */
+
+.exercise-camera-page-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center; /* 세로 방향으로 중앙 정렬 */
+  padding: 1rem;
+  height: 100%; /* 부모 높이(app-container)를 따름 */
+  box-sizing: border-box;
+  text-align: center;
+  gap: 1.5rem; /* 요소 간 간격 */
+}
+
+.analysis-status {
+  font-size: 1.1rem;
+  color: #555;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.analysis-status i {
+  color: #007bff;
+}
+
+.camera-feed-placeholder {
+  width: 90%; /* 화면 너비의 90% */
+  max-width: 400px; /* 최대 너비 */
+  aspect-ratio: 4/3; /* 4:3 비율 유지 (일반적인 웹캠 비율) */
+  background-color: #333; /* 어두운 배경 */
+  border: 2px dashed #007bff; /* 파란색 점선 테두리 */
+  border-radius: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: #bbb;
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
+}
+
+.camera-feed-placeholder p {
+  margin: 0.3rem 0;
+}
+
+.exercise-guide {
+  background-color: #e6f7ff; /* 연한 파란색 배경 */
+  border: 1px solid #91d5ff;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  width: 90%;
+  max-width: 400px;
+  margin-bottom: 2rem;
+}
+
+.exercise-guide h3 {
+  font-size: 1.3rem;
+  color: #1890ff;
+  margin-bottom: 0.5rem;
+}
+
+.exercise-guide p {
+  font-size: 0.95rem;
+  color: #333;
+  margin-bottom: 0.3rem;
+}
+
+.end-analysis-button {
+  background-color: #dc3545; /* 빨간색 계열 */
+  color: white;
+  padding: 0.8rem 1.5rem;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  width: 80%;
+  max-width: 250px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.end-analysis-button:hover {
+  background-color: #c82333;
+}

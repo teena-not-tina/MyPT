@@ -1,0 +1,121 @@
+/* src/pages/Diet/MenuRecommendationPage.css */
+
+.menu-recommendation-page-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.recommendation-title {
+  font-size: 1.8rem;
+  color: #333;
+  margin-bottom: 2rem;
+  text-align: center;
+  width: 100%;
+}
+
+.menu-list {
+  width: 100%;
+  max-width: 500px; /* 메뉴 목록의 최대 너비 */
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem; /* 메뉴 카드 간의 간격 */
+}
+
+.menu-card {
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: transform 0.2s ease;
+}
+
+.menu-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+.menu-card h3 {
+  font-size: 1.5rem;
+  color: #007bff;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+
+.menu-description {
+  font-size: 0.95rem;
+  color: #666;
+  text-align: center;
+  line-height: 1.4;
+  margin-bottom: 1rem;
+}
+
+.menu-details {
+  display: flex;
+  flex-wrap: wrap; /* 작은 화면에서 줄바꿈 */
+  justify-content: center;
+  gap: 0.8rem 1.2rem; /* 세로, 가로 간격 */
+  font-size: 0.9rem;
+  color: #444;
+  margin-bottom: 1rem;
+}
+
+.menu-details span i {
+  color: #ffc107; /* 아이콘 색상 (노란색 계열) */
+  margin-right: 0.3rem;
+}
+
+.menu-ingredients {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem 0;
+  border-top: 1px solid #eee;
+  padding-top: 1rem;
+}
+
+.menu-ingredients li {
+  font-size: 0.9rem;
+  color: #555;
+  margin-bottom: 0.4rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.menu-ingredients li i {
+  color: #28a745; /* 녹색 체크 아이콘 */
+  margin-top: 0.2rem; /* 텍스트와 정렬 맞춤 */
+}
+
+.select-menu-button {
+  width: 100%;
+  padding: 0.9rem;
+  font-size: 1.1rem;
+  border-radius: 8px;
+  background-color: #007bff; /* 주 버튼 색상 */
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.select-menu-button:hover {
+  background-color: #0056b3;
+}
+
+.no-recommendation {
+  font-size: 1rem;
+  color: #777;
+  text-align: center;
+  padding: 2rem;
+  border: 1px dashed #ccc;
+  border-radius: 0.5rem;
+  margin-top: 1rem;
+}

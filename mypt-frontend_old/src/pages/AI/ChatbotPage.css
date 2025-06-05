@@ -1,0 +1,112 @@
+/* src/pages/AI/ChatbotPage.css */
+
+.chatbot-page-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh; /* 뷰포트 전체 높이를 사용 */
+  overflow: hidden; /* 스크롤은 메시지 영역에서만 발생하도록 */
+  background-color: #f7f7f7; /* 배경색 변경 */
+}
+
+.chatbot-messages-area {
+  flex-grow: 1; /* 남은 공간을 모두 차지 */
+  padding: 1rem;
+  overflow-y: auto; /* 메시지 영역만 스크롤 가능 */
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem; /* 메시지 버블 간 간격 */
+  /* 헤더와 내비게이션 바 높이를 고려한 패딩 (필요시 조정) */
+  padding-top: calc(1rem + var(--header-height, 60px)); /* 예시: 헤더 높이만큼 추가 패딩 */
+  padding-bottom: calc(1rem + var(--navbar-height, 60px)); /* 예시: 내비게이션 바 높이만큼 추가 패딩 */
+}
+
+.message-bubble {
+  max-width: 80%; /* 메시지 버블의 최대 너비 */
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  word-wrap: break-word; /* 긴 텍스트 자동 줄바꿈 */
+}
+
+.message-bubble.user {
+  background-color: #fee500; /* 카톡 노란색 */
+  color: #333;
+  align-self: flex-end; /* 오른쪽 정렬 */
+  border-bottom-right-radius: 0.2rem; /* 꼬리 부분 */
+}
+
+.message-bubble.bot {
+  background-color: #ffffff; /* 흰색 배경 */
+  color: #333;
+  align-self: flex-start; /* 왼쪽 정렬 */
+  border-bottom-left-radius: 0.2rem; /* 꼬리 부분 */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); /* 그림자 추가 */
+}
+
+.chatbot-input-area {
+  display: flex;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid #e0e0e0;
+  background-color: #ffffff;
+  align-items: flex-end; /* 텍스트 에어리어와 버튼 하단 정렬 */
+  gap: 0.75rem;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05); /* 상단 그림자 */
+  /* 내비게이션 바 위에 위치하도록 설정 (ConditionalNavbar가 필요) */
+  position: sticky;
+  bottom: 0;
+  width: 100%;
+  box-sizing: border-box;
+  z-index: 20; /* Navbar보다 위에 */
+}
+
+.message-input-textarea {
+  flex-grow: 1; /* 남은 공간 모두 차지 */
+  border: 1px solid #ddd;
+  border-radius: 1.2rem; /* 둥근 입력창 */
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  resize: none; /* 사용자 크기 조절 방지 */
+  overflow: hidden; /* 내용이 넘치면 스크롤바 생성 방지 */
+  min-height: 40px; /* 최소 높이 */
+  max-height: 120px; /* 최대 높이 (여러 줄 가능) */
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+
+.message-input-textarea:focus {
+  border-color: #007bff;
+  outline: none;
+}
+
+.send-button {
+  background-color: #007bff; /* 파란색 보내기 버튼 */
+  color: white;
+  border: none;
+  border-radius: 50%; /* 원형 버튼 */
+  width: 44px; /* 크기 */
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  flex-shrink: 0; /* 크기 줄어들지 않도록 */
+}
+
+.send-button:hover {
+  background-color: #0056b3;
+}
+
+.send-button i {
+  font-size: 1.2rem;
+}
+
+/* 추가적으로, page-container의 높이를 100vh로 설정하고,
+   Header와 Navbar의 높이를 고정하여 메시지 영역이 그 사이에서 스크롤 되도록
+   App.js의 app-container 또는 global.css의 page-container 설정을 조정해야 합니다. */
+/* global.css 에 다음 변수 추가 또는 확인: */
+/* :root {
+  --header-height: 60px; // 예시
+  --navbar-height: 60px; // 예시
+} */

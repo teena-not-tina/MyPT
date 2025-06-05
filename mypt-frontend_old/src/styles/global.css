@@ -1,0 +1,211 @@
+/* src/styles/global.css 에 추가된 내용 */
+
+/* 스플래시 화면 컨테이너 스타일 */
+.splash-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center; /* 수직 중앙 정렬 */
+  align-items: center;     /* 수평 중앙 정렬 */
+  width: 100vw;
+  height: 100vh;
+  background-color: #007bff; /* 파란색 배경 (원하는 색으로 변경) */
+  color: white;             /* 흰색 텍스트 */
+  font-size: 2.5rem;        /* 큰 폰트 크기 */
+  font-weight: bold;
+  position: absolute; /* App 컴포넌트 내에서 전체 화면 차지 */
+  top: 0;
+  left: 0;
+  z-index: 10000; /* 다른 요소 위에 표시되도록 */
+}
+
+/* 데스크톱 환경에서는 app-container 내부에 맞춰지도록 */
+@media (min-width: 768px) {
+  .splash-container {
+    width: 100%; /* app-container의 너비를 따름 */
+    height: 100%; /* app-container의 높이를 따름 */
+    border-radius: 1rem; /* app-container의 둥근 모서리 */
+    box-shadow: none; /* 그림자는 app-container가 가짐 */
+  }
+}
+
+.splash-title {
+  animation: fadeInOut 2s ease-in-out infinite; /* 간단한 애니메이션 추가 (선택 사항) */
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* 다른 global.css 내용은 그대로 유지 */
+/* app-container 등 */
+.app-container {
+  max-width: 480px; /* 스마트폰 가로 길이 기준 */
+  margin: 0 auto;   /* 중앙 정렬 */
+  min-height: 100vh; /* 뷰포트 전체 높이 */
+  background-color: #ffffff; /* 흰색 배경 */
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); /* 그림자 효과 */
+  display: flex;
+  flex-direction: column;
+  position: relative; /* 자식 요소의 absolute 위치 기준 */
+}
+
+.page-content-wrapper {
+  flex-grow: 1; /* 남은 공간 모두 차지 */
+  padding: 1rem;
+  overflow-y: auto; /* 내용이 넘칠 경우 스크롤바 */
+  -webkit-overflow-scrolling: touch; /* 부드러운 스크롤 */
+}
+
+/* 모바일 뷰포트에 맞추기 */
+@media (max-width: 767px) {
+  .app-container {
+    width: 100vw; /* 모바일에서는 뷰포트 너비 전체 사용 */
+    height: 100vh; /* 모바일에서는 뷰포트 높이 전체 사용 */
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+/* src/styles/global.css 에 추가 */
+
+/* 인증 페이지 컨테이너 */
+.auth-page-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start; /* 상단부터 채우기 */
+  align-items: center;
+  padding: 2rem 1rem;
+  box-sizing: border-box; /* 패딩이 너비에 포함되도록 */
+}
+
+.auth-title {
+  font-size: 2rem;
+  color: #333;
+  margin-bottom: 2rem;
+  text-align: center;
+  width: 100%;
+}
+
+.auth-form {
+  width: 100%;
+  max-width: 350px; /* 폼 최대 너비 제한 */
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem; /* 요소 간 간격 */
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group label {
+  font-size: 0.9rem;
+  color: #555;
+  margin-bottom: 0.4rem;
+  font-weight: bold;
+}
+
+.form-input {
+  padding: 0.8rem;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  width: 100%; /* 부모 너비에 맞춤 */
+  box-sizing: border-box; /* 패딩이 너비에 포함되도록 */
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #007bff; /* 포커스 시 색상 변경 */
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+}
+
+.primary-button {
+  background-color: #007bff;
+  color: white;
+  padding: 0.8rem 1.5rem;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  width: 100%; /* 부모 너비에 맞춤 */
+  box-sizing: border-box;
+}
+
+.primary-button:hover {
+  background-color: #0056b3;
+}
+
+.auth-button {
+  margin-top: 1rem;
+}
+
+.auth-link-text {
+  margin-top: 1.5rem;
+  font-size: 0.95rem;
+  color: #666;
+  text-align: center;
+  width: 100%;
+}
+
+.auth-link {
+  color: #007bff;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+}
+/* src/styles/global.css 에 추가 */
+
+/* 헤더 뒤로 가기 버튼 스타일 */
+.back-button {
+  background: none;
+  border: none;
+  color: #fff; /* 흰색 아이콘 */
+  font-size: 1.4rem;
+  cursor: pointer;
+  position: absolute; /* 헤더 좌측에 고정 */
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s ease;
+}
+
+.back-button:hover {
+  opacity: 0.7;
+}
+
+/* app-header에 position: relative; 가 있어야 back-button의 position: absolute; 가 제대로 작동합니다. */
+.app-header {
+  width: 100%;
+  background-color: #007bff;
+  color: white;
+  padding: 1rem;
+  text-align: center;
+  font-size: 1.2rem;
+  font-weight: bold;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  position: relative; /* 자식 요소 (back-button)의 absolute 포지셔닝 기준 */
+  z-index: 10; /* 다른 요소 위에 표시 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-title {
+  margin: 0;
+  font-size: 1.2rem;
+  flex-grow: 1; /* 제목이 남은 공간을 차지하여 중앙 정렬 */
+  text-align: center;
+}
