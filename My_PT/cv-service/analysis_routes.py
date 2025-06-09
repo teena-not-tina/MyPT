@@ -1,9 +1,15 @@
-# analysis_routes.py - 분석 및 검색 관련 라우터들
+# analysis_routes.py - 분석 및 검색 관련 라우터들 (수정됨)
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 import traceback
+import os
+import sys
+from datetime import datetime
+
+# 🔧 새로운 모델 로더 import
+from services.model_loader import get_loaded_models, debug_status
 
 # 라우터 생성
 analysis_router = APIRouter()
@@ -22,7 +28,7 @@ class SearchResult(BaseModel):
 
 @analysis_router.post("/api/search")
 async def web_search(request: SearchRequest):
-    """웹 검색 API - main.py에서 그대로 이동"""
+    """웹 검색 API"""
     try:
         print(f"\n=== Web Search API Called ===")
         print(f"Query: {request.query}")
@@ -30,8 +36,13 @@ async def web_search(request: SearchRequest):
         if not request.query or not request.query.strip():
             raise HTTPException(status_code=400, detail="Search query required")
         
-        from main import perform_google_search
-        search_results = await perform_google_search(request.query)
+        # 🔧 직접 검색 함수 import
+        try:
+            from utils.search import perform_google_search
+            search_results = await perform_google_search(request.query)
+        except ImportError:
+            print("검색 모듈을 찾을 수 없습니다")
+            search_results = []
         
         print(f"Search complete: {len(search_results)} results")
         
@@ -51,7 +62,7 @@ async def web_search(request: SearchRequest):
 
 @analysis_router.post("/api/analyze")
 async def analyze_with_gemini(request_data: dict):
-    """Gemini 분석 API - main.py에서 그대로 이동"""
+    """Gemini 분석 API"""
     try:
         print(f"\n=== Gemini Analysis API Called ===")
         
@@ -76,14 +87,24 @@ async def analyze_with_gemini(request_data: dict):
 
 @analysis_router.get("/health")
 async def health_check():
-    """헬스 체크 API - main.py에서 그대로 이동"""
-    from main import ensemble_models, fridge_collection, DB_NAME, COLLECTION_NAME, MONGODB_URI
-    import os
-    from datetime import datetime
-    
+    """헬스 체크 API"""
     print(f"\n=== Health Check API Called ===")
     
-    mongodb_status = "connected" if fridge_collection is not None else "disconnected"
+    # 🔧 새로운 방식으로 모델 정보 가져오기
+    models = get_loaded_models()
+    debug_info = debug_status()
+    
+    # 환경 변수 및 설정 확인
+    mongodb_status = "unknown"
+    try:
+        # DB 정보는 config에서 가져오기
+        from config.database import MONGODB_URI, DB_NAME, COLLECTION_NAME
+        mongodb_status = "configured" if MONGODB_URI else "not_configured"
+    except:
+        mongodb_status = "not_configured"
+        DB_NAME = "unknown"
+        COLLECTION_NAME = "unknown" 
+        MONGODB_URI = None
     
     return {
         "status": "healthy",
@@ -101,11 +122,11 @@ async def health_check():
         "services": {
             "ensemble_models": {
                 "target_models": ["yolo11s", "best", "best_friged"],
-                "loaded_models": list(ensemble_models.keys()),
-                "loaded_count": len(ensemble_models),
+                "loaded_models": list(models.keys()),
+                "loaded_count": len(models),
                 "target_count": 3,
-                "ensemble_ready": len(ensemble_models) > 1,
-                "full_ensemble": len(ensemble_models) == 3
+                "ensemble_ready": len(models) > 1,
+                "full_ensemble": len(models) == 3
             },
             "mongodb": mongodb_status,
             "ocr": "configured" if os.environ.get('CLOVA_OCR_API_URL') else "not_configured",
@@ -123,7 +144,7 @@ async def health_check():
             "uri": MONGODB_URI.replace("root:example", "***:***") if MONGODB_URI else None
         },
         "temp_dir_exists": os.path.exists("temp"),
-        "missing_models": [name for name in ["yolo11s", "best", "best_friged"] if name not in ensemble_models],
+        "missing_models": [name for name in ["yolo11s", "best", "best_friged"] if name not in models],
         "enhanced_features": [
             "Pattern-based ingredient inference",
             "Google Custom Search integration",
@@ -134,11 +155,12 @@ async def health_check():
         "debug_info": {
             "working_directory": os.getcwd(),
             "python_version": sys.version,
-            "models_loaded": len(ensemble_models),
+            "models_loaded": len(models),
             "directories": {
                 "models": os.path.exists("models"),
                 "modules": os.path.exists("modules"),
                 "temp": os.path.exists("temp")
-            }
+            },
+            "model_debug": debug_info
         }
     }
