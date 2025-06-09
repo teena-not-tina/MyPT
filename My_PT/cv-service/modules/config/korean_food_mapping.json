@@ -1,0 +1,48 @@
+{   
+    "_description": "한국 식품 매핑 설정 파일",
+    "_version": "1.0",
+    "fruits": {
+        "apple": "사과", "banana": "바나나", "orange": "오렌지", "strawberry": "딸기",
+        "grape": "포도", "watermelon": "수박", "pineapple": "파인애플", "peach": "복숭아",
+        "pear": "배", "kiwi": "키위", "lemon": "레몬", "lime": "라임", "mango": "망고",
+        "cherry": "체리", "plum": "자두"
+    },
+     
+    "vegetables": {
+        "carrot": "당근", "broccoli": "브로콜리", "cabbage": "양배추", "lettuce": "상추",
+        "spinach": "시금치", "onion": "양파", "garlic": "마늘", "potato": "감자",
+        "tomato": "토마토", "cucumber": "오이", "pepper": "피망", "corn": "옥수수",
+        "mushroom": "버섯", "eggplant": "가지", "radish": "무", "bean": "콩",
+        "pumpkin": "호박", "celery": "셀러리", "asparagus": "아스파라거스",
+        "green onion": "대파", "scallion": "파", "leek": "리크"
+    },
+    
+    "meats": {
+        "beef": "소고기", "pork": "돼지고기", "chicken": "닭고기", "fish": "생선",
+        "salmon": "연어", "tuna": "참치", "shrimp": "새우", "crab": "게",
+        "lobster": "랍스터", "squid": "오징어", "octopus": "문어", "clam": "조개",
+        "oyster": "굴", "scallop": "가리비"
+    },
+    "dairy": {
+        "milk": "우유", "cheese": "치즈", "butter": "버터", "yogurt": "요거트",
+        "cream": "크림", "egg": "계란"
+    },
+    "grains": {
+        "rice": "쌀", "bread": "빵", "noodle": "면", "pasta": "파스타",
+        "cereal": "시리얼", "oat": "오트", "wheat": "밀", "barley": "보리"
+    },
+    "drinks": {
+        "water": "물", "juice": "주스", "coffee": "커피", "tea": "차",
+        "soda": "탄산음료", "beer": "맥주", "wine": "와인",
+        "milkshake": "밀크쉐이크", "smoothie": "스무디", "lemonade": "레모네이드"
+ 
+    },
+    "condiments": {
+        "salt": "소금", "sugar": "설탕", "oil": "기름", "vinegar": "식초",
+        "sauce": "소스", "honey": "꿀", "jam": "잼", "nut": "견과류",
+        "almond": "아몬드", "walnut": "호두", "peanut": "땅콩" 
+    },
+    "class": {
+        "person": "사람", "bottle": "병", "cup": "컵", "bowl": "그릇"
+    } 
+}

@@ -1,0 +1,27 @@
+/* 스피너 애니메이션 */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 네비게이션 관련 스타일 */
+.mobile-menu-button {
+  display: none !important;
+}
+
+.navigation-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+/* 반응형 디자인 */
+@media (max-width: 768px) {
+  .desktop-menu {
+    display: none !important;
+  }
+  
+  .mobile-menu-button {
+    display: block !important;
+  }
+}
