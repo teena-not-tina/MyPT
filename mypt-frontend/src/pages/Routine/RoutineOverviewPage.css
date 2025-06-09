@@ -1,0 +1,116 @@
+/* src/pages/Routine/RoutineOverviewPage.css */
+
+.routine-overview-page-content {
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* 중앙 정렬 */
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.routine-list-title {
+  font-size: 1.8rem;
+  color: #333;
+  margin-bottom: 1.5rem;
+  width: 100%;
+  text-align: center;
+}
+
+.add-routine-button {
+  background-color: #28a745; /* 녹색 계열 */
+  color: white;
+  padding: 0.7rem 1.2rem;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  margin-bottom: 2rem; /* 목록과의 간격 */
+  display: flex;
+  align-items: center;
+  gap: 0.5rem; /* 아이콘과 텍스트 간격 */
+}
+
+.add-routine-button:hover {
+  background-color: #218838;
+}
+
+.routine-list {
+  width: 100%;
+  max-width: 450px; /* 목록의 최대 너비 */
+  display: flex;
+  flex-direction: column;
+  gap: 1rem; /* 루틴 카드 간의 간격 */
+}
+
+.routine-card {
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 0.75rem;
+  padding: 1.2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: transform 0.2s ease;
+}
+
+.routine-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.routine-card h3 {
+  font-size: 1.3rem;
+  color: #007bff;
+  margin-bottom: 0.3rem;
+}
+
+.routine-card p {
+  font-size: 0.95rem;
+  color: #555;
+  line-height: 1.4;
+}
+
+.routine-days {
+  font-size: 0.85rem;
+  color: #777;
+  font-style: italic;
+  margin-top: 0.5rem;
+}
+
+.view-routine-button {
+  background-color: #007bff;
+  color: white;
+  padding: 0.6rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: bold;
+  text-decoration: none;
+  text-align: center;
+  margin-top: 1rem;
+  display: inline-flex; /* 아이콘과 텍스트 정렬 */
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: background-color 0.2s ease;
+}
+
+.view-routine-button:hover {
+  background-color: #0056b3;
+}
+
+.no-routine-message {
+  font-size: 1rem;
+  color: #777;
+  text-align: center;
+  padding: 2rem;
+  border: 1px dashed #ccc;
+  border-radius: 0.5rem;
+  margin-top: 1rem;
+}
+
+/* 폰트어썸 아이콘을 위한 임포트 (App.js 또는 index.html에 추가해야 함) */
+/* <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"> */

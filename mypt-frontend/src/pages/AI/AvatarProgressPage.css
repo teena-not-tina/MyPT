@@ -1,0 +1,218 @@
+/* src/pages/AI/AvatarProgressPage.css */
+
+.avatar-progress-page-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 20px;
+}
+
+.avatar-title {
+  font-size: 1.8rem;
+  color: #333;
+  margin-bottom: 0.5rem;
+  text-align: center;
+  width: 100%;
+}
+
+.avatar-image-container {
+  position: relative;
+  width: 180px; /* 아바타 이미지 크기 */
+  height: 180px;
+  border-radius: 50%;
+  background-color: transparent; /* 배경색 제거 */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden; /* 이미지가 넘치지 않도록 */
+  margin-bottom: 1.5rem;
+  box-shadow: none; /* 그림자 제거 */
+}
+
+.avatar-image {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 진행도 바 */
+.progress-bar-container {
+  width: 90%;
+  max-width: 350px;
+  background-color: #e9ecef;
+  border-radius: 10px;
+  height: 20px;
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 2rem;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background-color: #28a745; /* 녹색 진행 바 */
+  border-radius: 10px;
+  transition: width 0.5s ease-in-out;
+}
+
+.progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white; /* 텍스트 색상 */
+  font-size: 0.85rem;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+}
+
+/* 요약 카드 */
+.summary-cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  width: 100%;
+  max-width: 500px;
+  margin-bottom: 2rem;
+}
+
+.summary-card {
+  flex: 1 1 calc(50% - 1rem); /* 2열 배치, 간격 고려 */
+  min-width: 150px; /* 최소 너비 */
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  padding: 1.2rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card-icon {
+  font-size: 2rem;
+  color: #007bff;
+  margin-bottom: 0.5rem;
+}
+
+.summary-card h3 {
+  font-size: 1.1rem;
+  color: #333;
+  margin: 0;
+}
+
+.card-value {
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: #28a745; /* 녹색 강조 */
+  margin: 0;
+}
+
+.card-note {
+  font-size: 0.8rem;
+  color: #888;
+  margin: 0;
+}
+
+/* 추가 정보 섹션 */
+.additional-info-section {
+  width: 90%;
+  max-width: 500px;
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.additional-info-section h3 {
+  font-size: 1.4rem;
+  color: #333;
+  margin-bottom: 1rem;
+}
+
+.info-placeholder {
+  font-size: 0.95rem;
+  color: #777;
+  line-height: 1.5;
+  border: 1px dashed #ccc;
+  padding: 1rem;
+  border-radius: 0.5rem;
+}
+
+/* 아바타 컨테이너 스타일 */
+.avatar-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 20px auto;
+  width: 180px;
+  height: 180px;
+  position: relative;
+}
+
+/* 캐릭터 영역 스타일링 */
+.dashboard-character-area {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  margin: 20px 0;
+}
+
+.character-placeholder {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.character-placeholder:hover {
+  transform: scale(1.05);
+}
+
+.character-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.timer-overlay {
+  position: absolute;
+  top: -30px;  /* 이미지 위로 이동 */
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+.timer-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.character-placeholder {
+  position: relative;
+  margin-top: 40px;  /* 타이머를 위한 여백 추가 */
+  /* ...existing code... */
+}
+
+.food-image-container {
+  /* 컨테이너는 유지하되 내용물만 제거 */
+  margin: 10px 0;
+}

@@ -1,0 +1,97 @@
+/* src/pages/Diet/IngredientInputPage.css */
+
+/* 여기에 IngredientInputPage 관련 스타일을 추가할 수 있습니다. */
+/* 현재는 빈 파일로 두어도 오류 해결에는 충분합니다. */
+
+.diet-input-page {
+  /* 예시 스타일 */
+  /* background-color: #f9f9f9; */
+  /* padding: 20px; */
+}
+/* src/pages/Diet/IngredientInputPage.css */
+
+.diet-input-page-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.diet-input-title {
+  font-size: 1.8rem;
+  color: #333;
+  margin-bottom: 2rem;
+  text-align: center;
+  width: 100%;
+}
+
+.diet-input-form {
+  width: 100%;
+  max-width: 450px; /* 폼의 최대 너비 */
+  background-color: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+  padding: 1.5rem;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+  width: 100%;
+}
+
+.input-label {
+  display: block;
+  font-size: 1rem;
+  color: #555;
+  margin-bottom: 0.5rem;
+  font-weight: bold;
+}
+
+.form-input-textarea {
+  width: calc(100% - 20px); /* 패딩 고려 */
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 1rem;
+  resize: vertical; /* 세로 크기 조절 가능 */
+  min-height: 120px; /* 최소 높이 */
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-input-textarea:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+  outline: none;
+}
+
+.diet-submit-button {
+  width: 100%;
+  padding: 0.9rem;
+  font-size: 1.1rem;
+  border-radius: 8px;
+  background-color: #28a745; /* 녹색 */
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.diet-submit-button:hover {
+  background-color: #218838;
+}
+
+.diet-feature-note {
+  font-size: 0.85rem;
+  color: #777;
+  margin-top: 2rem;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.diet-feature-note i {
+  color: #007bff; /* 아이콘 색상 */
+  margin: 0 0.2rem;
+}

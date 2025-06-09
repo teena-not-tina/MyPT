@@ -1,0 +1,5 @@
+# Add your Python dependencies here, e.g.,
+# Flask
+# pymongo
+# python-dotenv
+# bcrypt

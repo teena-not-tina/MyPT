@@ -1,0 +1,79 @@
+/* src/components/Shared/Header.css */
+
+.app-header {
+  background-color: #007bff; /* 기본 헤더 색상 */
+  color: white;
+  padding: 15px 20px;
+  font-size: 20px;
+  font-weight: bold;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative; /* 자식 요소 위치 지정을 위해 */
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.app-header h1 {
+  margin: 0;
+  flex-grow: 1; /* 타이틀이 중앙에 오도록 */
+}
+
+.back-button {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.8rem;
+  cursor: pointer;
+  padding: 0 10px;
+  position: absolute; /* 절대 위치로 왼쪽 배치 */
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: color 0.2s ease;
+}
+
+.back-button:hover {
+  color: #e0e0e0;
+}
+
+/* ⭐️⭐️⭐️ 새로 추가될 프로필 이미지 영역 ⭐️⭐️⭐️ */
+.header-profile-area {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.header-profile-image {
+  width: 50px; /* 프로필 이미지 크기 */
+  height: 50px;
+  border-radius: 50%; /* 원형 */
+  object-fit: cover; /* 이미지가 잘리지 않고 채워지도록 */
+  border: 2px solid white; /* 테두리 */
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+.header-profile-placeholder {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background-color: #ccc; /* 이미지가 없을 때의 기본 배경 */
+  border: 2px solid white;
+}
+
+.profile-image-container {
+  position: absolute;
+  right: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.profile-image {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
