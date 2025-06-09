@@ -207,5 +207,29 @@
   margin: 10px 0;
 }
 
+/* 이미지 메시지 관련 스타일 추가 */
+.message-with-image {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.chat-image {
+    max-width: 200px;
+    max-height: 200px;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin: 5px 0;
+    object-fit: contain;
+}
+
+.chat-bubble.bot .message-with-image {
+    align-items: flex-start;
+}
+
+.chat-bubble.user .message-with-image {
+    align-items: flex-end;
+}
+
 /* 기존 추천 식단 관련 스타일 (필요 없다면 제거) */
 /* .recommendation-title, .menu-list, .menu-card 등 */

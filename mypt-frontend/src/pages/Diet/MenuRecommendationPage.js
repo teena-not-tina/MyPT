@@ -6,28 +6,31 @@ import '../../styles/global.css';
 import './MenuRecommendationPage.css';
 import axios from 'axios';
 
-// axios 기본 설정 수정
+// axios 기본 설정
 axios.defaults.baseURL = 'http://localhost:5000/api';
-axios.defaults.timeout = 240000;  // 4분으로 증가
+axios.defaults.timeout = 240000;
 axios.defaults.headers.common['Content-Type'] = 'application/json';
 axios.defaults.withCredentials = true;
+
 
 function MenuRecommendationPage() {
   const navigate = useNavigate();
   const [chatStep, setChatStep] = useState('initial_question');
   const [chatMessages, setChatMessages] = useState([]);
-  // ⭐️ 사용자 음식 입력 상태: 올바르게 선언됨
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [generatedProfileImage, setGeneratedProfileImage] = useState(null);
-
   const messagesEndRef = useRef(null);
+  const hasInitialMessage = useRef(false); // ✅ 추가된 부분
 
   useEffect(() => {
-    if (chatMessages.length === 0) {
+    if (!hasInitialMessage.current && chatMessages.length === 0) {
+      hasInitialMessage.current = true; // ✅ 최초 한 번만 실행되도록 설정
+      setChatStep('initial_question');
       addMessage('bot', '안녕하세요! 식사는 어떻게 할 건가요?');
     }
   }, []);
+
 
   useEffect(() => {
     scrollToBottom();
@@ -37,10 +40,14 @@ function MenuRecommendationPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const addMessage = (sender, text) => {
-    setChatMessages((prevMessages) => [
-      ...prevMessages,
-      { sender, text, timestamp: new Date() },
+  const addMessage = (sender, content) => {
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        sender,
+        timestamp: new Date(),
+        ...(typeof content === 'object' ? content : { type: 'text', text: content })
+      }
     ]);
   };
 
@@ -59,68 +66,88 @@ function MenuRecommendationPage() {
     }
   };
 
-  // ⭐️ handleSubmitMeal 함수 수정
   const handleSubmitMeal = async (e) => {
     if (e) e.preventDefault();
-    
     if (!userInput.trim()) {
-        alert('메시지를 입력해주세요.');
-        return;
+      alert('메시지를 입력해주세요.');
+      return;
     }
 
     setIsLoading(true);
-    addMessage('user', userInput);
+    addMessage('user', { type: 'text', text: userInput });
 
     try {
-        const response = await axios.post(
-            `/chat_and_generate`,
-            {
-                message: userInput,
-                user_id: 'test@mail.com'
-            },
-            {
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                withCredentials: true,
-                timeout: 300000 // 5분 타임아웃
-            }
-        );
-
-        if (response.data) {
-            const { chat_response, profile_image_b64 } = response.data;
-            addMessage('bot', chat_response);
-            
-            if (profile_image_b64) {
-                localStorage.setItem('userProfileImage', profile_image_b64);
-                addMessage('bot', '✨ 새로운 이미지가 생성되었습니다!');
-                setChatStep('show_generated_image');
-            } else {
-                addMessage('bot', '😢 이미지 생성에 실패했습니다.');
-                setChatStep('error_state');
-            }
+      const response = await axios.post(
+        `/chat_and_generate`,
+        {
+          message: userInput,
+          user_id: 'test@mail.com'
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          withCredentials: true,
+          timeout: 300000
         }
+      );
 
+      if (response.data) {
+        const { chat_response, profile_image_b64 } = response.data;
+
+        if (profile_image_b64) {
+          setGeneratedProfileImage(profile_image_b64);
+          localStorage.setItem('userProfileImage', profile_image_b64);
+
+          addMessage('bot', {
+            type: 'image',
+            text: `${chat_response}\n\n✨ 새로운 캐릭터가 생성되었습니다!`,
+            imageUrl: `data:image/png;base64,${profile_image_b64}`
+          });
+
+          setChatStep('show_generated_image');
+        } else {
+          addMessage('bot', { type: 'text', text: chat_response });
+        }
+      }
     } catch (error) {
-        console.error('API 호출 중 오류 발생:', error);
-        addMessage('bot', '😢 서버 통신 중 오류가 발생했습니다.');
-        setChatStep('error_state');
+      console.error('API 호출 중 오류:', error);
+      addMessage('bot', { type: 'text', text: '😢 서버 통신 중 오류가 발생했습니다.' });
+      setChatStep('error_state');
     } finally {
-        setIsLoading(false);
-        setUserInput('');
+      setIsLoading(false);
+      setUserInput('');
     }
   };
 
-  // ⭐️ handleKeyPress 함수 수정: mealInput -> userInput으로 변경
   const handleKeyPress = (e) => {
-  if (e.key === 'Enter' && !isLoading && userInput.trim()) { // ⭐️ mealInput -> userInput으로 변경
-    handleSubmitMeal();
-  }
-};
+    if (e.key === 'Enter' && !isLoading && userInput.trim()) {
+      handleSubmitMeal();
+    }
+  };
 
   const handleGoToDashboard = () => {
     navigate('/dashboard');
   };
+
+  const renderMessage = (msg, index) => (
+    <div key={index} className={`chat-bubble ${msg.sender}`}>
+      {msg.type === 'image' ? (
+        <div className="message-with-image">
+          <p>{msg.text}</p>
+          <img
+            src={msg.imageUrl}
+            alt="Generated Food Character"
+            className="chat-image"
+            onError={(e) => {
+              console.error('이미지 로딩 실패');
+              e.target.style.display = 'none';
+            }}
+          />
+        </div>
+      ) : (
+        <p>{msg.text}</p>
+      )}
+    </div>
+  );
 
   return (
     <div className="page-container">
@@ -132,11 +159,7 @@ function MenuRecommendationPage() {
 
       <div className="page-content-wrapper menu-recommendation-page-content">
         <div className="chatbot-messages-area">
-          {chatMessages.map((msg, index) => (
-            <div key={index} className={`chat-bubble ${msg.sender}`}>
-              <p>{msg.text}</p>
-            </div>
-          ))}
+          {chatMessages.map((msg, index) => renderMessage(msg, index))}
           <div ref={messagesEndRef} />
         </div>
 
@@ -163,34 +186,17 @@ function MenuRecommendationPage() {
               type="text"
               className="meal-input-field"
               placeholder="오늘 드신 음식 이름을 입력해주세요 (예: 불고기, 스파게티)"
-              value={userInput} // ⭐️ 여기는 이미 userInput으로 잘 되어있습니다.
-              onChange={(e) => setUserInput(e.target.value)} // ⭐️ 여기도 setUserInput으로 잘 되어있습니다.
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
               onKeyPress={handleKeyPress}
               disabled={isLoading}
             />
             <button
               className="primary-button send-meal-button"
               onClick={handleSubmitMeal}
-              disabled={isLoading || !userInput.trim()} // ⭐️ 여기도 userInput으로 잘 되어있습니다.
+              disabled={isLoading || !userInput.trim()}
             >
               {isLoading ? '생성 중...' : '전송'}
-            </button>
-          </div>
-        )}
-
-        {chatStep === 'show_generated_image' && generatedProfileImage && (
-          <div className="generated-image-preview">
-            <h3>새로운 아바타 이미지</h3>
-            <img
-              src={`data:image/png;base64,${generatedProfileImage}`}
-              alt="Generated Avatar"
-              className="generated-avatar-display"
-            />
-            <button
-              className="primary-button go-to-dashboard-button"
-              onClick={handleGoToDashboard}
-            >
-              대시보드로 돌아가기
             </button>
           </div>
         )}
@@ -201,7 +207,7 @@ function MenuRecommendationPage() {
             <button
               className="primary-button"
               onClick={() => setChatStep('initial_question')}
-              style={{marginTop: '10px'}}
+              style={{ marginTop: '10px' }}
             >
               처음으로 돌아가기
             </button>
