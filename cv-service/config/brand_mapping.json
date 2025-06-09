@@ -1,0 +1,24 @@
+{
+  "brand_mappings": {
+     "dairy": {
+      "brands": ["매일유업", "서울우유", "남양유업", "덴마크", "앵커"],
+      "common_products": ["우유", "요거트", "치즈", "버터"],
+      "default_product": "우유"
+    },
+    "beverage": {
+      "brands": ["코카콜라", "펩시", "칠성사이다", "스프라이트", "환타"],
+      "common_products": ["콜라", "사이다", "오렌지주스", "생수"],
+      "default_product": "음료"
+    },
+    "snacks": {
+      "brands": ["롯데", "오리온", "농심", "해태", "크라운"],
+      "common_products": ["과자", "초콜릿", "쿠키", "사탕"],
+      "default_product": "과자"
+    },
+    "instant": {
+      "brands": ["농심", "오뚜기", "팔도", "삼양", "진라면"],
+      "common_products": ["라면", "컵라면", "우동", "냉면"],
+      "default_product": "라면"
+    }
+  }
+}
