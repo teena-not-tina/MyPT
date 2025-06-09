@@ -1,0 +1,113 @@
+{
+  "correction_rules": [
+    {
+      "name": "orange_correction",
+      "description": "오렌지 색상 기반 보정",
+      "conditions": {
+        "detected_class": ["potato"],
+        "color_match": ["진한주황색", "연한주황색", "주황빨간색"],
+        "confidence_threshold": 0.85
+      },
+      "actions": {
+        "new_class": "orange",
+        "new_korean_name": "오렌지",
+        "confidence_boost": 0.1,
+        "max_confidence": 0.92
+      }
+    },
+    {
+      "name": "tomato_correction",
+      "description": "토마토 색상 기반 보정",
+      "conditions": {
+        "detected_class": ["apple", "ball"],
+        "color_match": ["진한빨간색", "주황빨간색"],
+        "confidence_threshold": 0.80
+      },
+      "actions": {
+        "new_class": "tomato",
+        "new_korean_name": "토마토",
+        "confidence_boost": 0.15,
+        "max_confidence": 0.90
+      }
+    },
+    {
+      "name": "banana_correction",
+      "description": "바나나 형태/색상 보정",
+      "conditions": {
+        "detected_class": ["stick", "rod"],
+        "color_match": ["진한노란색", "연한노란색"],
+        "confidence_threshold": 0.75,
+        "shape_ratio": {
+          "min_length_width_ratio": 3.0
+        }
+      },
+      "actions": {
+        "new_class": "banana",
+        "new_korean_name": "바나나",
+        "confidence_boost": 0.2,
+        "max_confidence": 0.95
+      }
+    },
+    {
+      "name": "avocado_correction",
+      "description": "아보카도 색상/형태 보정",
+      "conditions": {
+        "detected_class": ["apple", "potato"],
+        "color_match": ["진한초록색", "중간초록색", "연한초록색"],
+        "shape_ratio": {
+          "min_length_width_ratio": 1.2
+        }
+      },
+      "actions": {
+        "new_class": "avocado",
+        "new_korean_name": "아보카도",
+        "confidence_boost": 0.2,
+        "max_confidence": 0.9
+      }
+    },
+    {
+      "name": "kiwi_correction",
+      "description": "키위 갈색 색상 보정",
+      "conditions": {
+        "detected_class": ["potato", "orange"],
+        "color_match": ["진한갈색", "연한갈색", "황록색"]
+      },
+      "actions": {
+        "new_class": "kiwi",
+        "new_korean_name": "키위",
+        "confidence_boost": 0.15,
+        "max_confidence": 0.85
+      }
+    },
+    {
+      "name": "peach_correction", 
+      "description": "복숭아 주황 색상 보정",
+      "conditions": {
+        "detected_class": ["apple", "onion"],
+        "color_match": ["연한주황색", "주황빨간색"]
+      },
+      "actions": {
+        "new_class": "peach",
+        "new_korean_name": "복숭아",
+        "confidence_boost": 0.2,
+        "max_confidence": 0.9
+      }
+    }
+  ],
+  "brand_priority_rules": [
+    {
+      "brand_keywords": ["델몬트", "돌"],
+      "product_override": {
+        "banana": 0.95,
+        "pineapple": 0.90
+      }
+    },
+    {
+      "brand_keywords": ["썬키스트"],
+      "product_override": {
+        "orange": 0.98,
+        "lemon": 0.95
+      }
+    }
+  ]
+}
