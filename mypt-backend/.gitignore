@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+
+# Node.js (if applicable, though unlikely for pure Python backend)
+node_modules/
+
+# Environment
+.env

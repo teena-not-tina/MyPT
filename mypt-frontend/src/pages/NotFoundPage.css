@@ -1,0 +1,121 @@
+/* src/pages/NotFoundPage.css */
+
+.not-found-page-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100vh; /* 뷰포트 전체 높이 */
+  background-color: #f0f2f5; /* 배경색 */
+  color: #333;
+}
+
+.not-found-content {
+  padding: 2rem;
+  max-width: 500px;
+  background-color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+  margin-top: -60px; /* 헤더가 있다면 중앙 정렬을 위해 살짝 위로 올림 */
+}
+
+.not-found-code {
+  font-size: 6rem;
+  font-weight: bold;
+  color: #007bff; /* 강조 색상 */
+  margin-bottom: 1rem;
+  text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.not-found-message {
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 1rem;
+}
+
+.not-found-description {
+  font-size: 1rem;
+  color: #777;
+  line-height: 1.5;
+  margin-bottom: 2.5rem;
+}
+
+.not-found-actions {
+  display: flex;
+  flex-wrap: wrap; /* 작은 화면에서 줄바꿈 */
+  justify-content: center;
+  gap: 1rem; /* 버튼 사이 간격 */
+  margin-bottom: 2rem;
+}
+
+.go-home-button,
+.go-back-button {
+  padding: 0.9rem 1.5rem;
+  font-size: 1rem;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.go-home-button {
+  background-color: #28a745; /* 녹색 */
+  color: white;
+}
+
+.go-home-button:hover {
+  background-color: #218838;
+  transform: translateY(-2px);
+}
+
+.go-back-button {
+  background-color: #6c757d; /* 회색 */
+  color: white;
+}
+
+.go-back-button:hover {
+  background-color: #5a6268;
+  transform: translateY(-2px);
+}
+
+.helpful-links {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #eee;
+}
+
+.helpful-links h3 {
+  font-size: 1.2rem;
+  color: #444;
+  margin-bottom: 1rem;
+}
+
+.helpful-links ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.helpful-links li {
+  margin-bottom: 0.5rem;
+}
+
+.helpful-links a {
+  color: #007bff;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.helpful-links a:hover {
+  color: #0056b3;
+  text-decoration: underline;
+}
+
+/* 폰트어썸 아이콘을 위한 임포트 (App.js 또는 index.html에 추가해야 함) */
+/* <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"> */

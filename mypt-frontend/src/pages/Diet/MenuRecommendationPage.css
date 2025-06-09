@@ -1,0 +1,235 @@
+/* src/pages/Diet/MenuRecommendationPage.css */
+
+/* .page-container (전역 스타일에서 이미 정의되었을 가능성 있음) */
+
+.menu-recommendation-page-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem 1rem;
+  box-sizing: border-box;
+  width: 100%;
+  flex-grow: 1; /* 대화 영역이 스크롤될 수 있도록 */
+  overflow-y: auto; /* 이 컨테이너 자체도 스크롤 가능하게 */
+}
+
+/* 챗봇 대화 영역 스타일 (App.js의 chat-messages와 유사) */
+.chatbot-messages-area { /* App.js의 .chat-messages 역할 */
+  width: 100%;
+  max-width: 600px; /* 챗봇 대화창 최대 너비 */
+  height: auto; /* 내용에 따라 높이 조절 */
+  min-height: 200px; /* 최소 높이 설정 */
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1.5rem; /* 아래쪽 간격 조절 */
+  overflow-y: auto; /* 내용이 넘칠 경우 스크롤 */
+  display: flex;
+  flex-direction: column;
+  background-color: #ffffff; /* App.js의 chat-messages 배경색 */
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.chat-bubble { /* App.js의 .message 역할 */
+  max-width: 80%;
+  padding: 0.8rem 1rem;
+  border-radius: 18px;
+  margin-bottom: 10px;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.chat-bubble p {
+  margin: 0;
+}
+
+.chat-bubble.bot { /* App.js의 .message.bot 역할 */
+  background-color: #f0f0f0;
+  color: #333;
+  align-self: flex-start; /* 좌측 정렬 */
+  border-bottom-left-radius: 5px; /* 모서리 조절 */
+  margin-right: auto;
+  max-width: 80%;
+  padding: 10px 15px;
+  border-radius: 15px;
+  margin-bottom: 10px;
+}
+
+.chat-bubble.user { /* App.js의 .message.user 역할 */
+  background-color: #dcf8c6; /* 사용자 메시지 배경색 (App.js의 user 메시지 색상) */
+  color: #333;
+  align-self: flex-end; /* 우측 정렬 */
+  border-bottom-right-radius: 5px; /* 모서리 조절 */
+}
+
+/* 챗봇 옵션 (버튼) 컨테이너 - 기존 */
+.chatbot-options-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  max-width: 400px;
+  margin-top: 1.5rem;
+}
+
+.chatbot-option-button { /* 기존 */
+  background-color: #81d4fa;
+  color: white;
+  padding: 1rem 1.5rem;
+  border: none;
+  border-radius: 2rem;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  width: 100%;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.chatbot-option-button:hover { /* 기존 */
+  background-color: #64b5f6;
+}
+
+/* ⭐️ 식사 입력 필드 및 버튼 스타일 (App.js의 chat-input-area 통합) ⭐️ */
+.chat-input-area { /* App.js의 chat-input-area 역할 */
+  display: flex;
+  width: 100%;
+  max-width: 600px;
+  gap: 10px;
+  margin-top: 1.5rem;
+  padding: 0 10px;
+  box-sizing: border-box;
+  background-color: #f9f9f9; /* App.js의 chat-input-area 배경색 */
+  border-top: 1px solid #eee; /* App.js의 chat-input-area 테두리 */
+}
+
+.meal-input-field { /* App.js의 chat-input input[type="text"] 역할 */
+  flex-grow: 1;
+  padding: 12px 18px;
+  border: 1px solid #ddd;
+  border-radius: 25px;
+  font-size: 1rem;
+  outline: none;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.meal-input-field:focus { /* 기존 및 App.js 유사 */
+  border-color: #81d4fa;
+  box-shadow: 0 0 0 3px rgba(129, 212, 250, 0.3);
+}
+
+.send-meal-button { /* App.js의 chat-input button 역할 */
+  background-color: #007bff; /* App.js의 button 색상 */
+  color: white;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 25px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  white-space: nowrap;
+}
+
+.send-meal-button:hover { /* App.js의 button:hover */
+  background-color: #0056b3;
+}
+
+.send-meal-button:disabled { /* App.js의 button:disabled */
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+/* ⭐️ 로딩 인디케이터 (App.js의 로딩 메시지) ⭐️ */
+.loading-indicator {
+  margin-top: 2rem;
+  font-size: 1.1rem;
+  color: #555;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* ⭐️ 생성된 이미지 미리보기 영역 (App.js의 이미지 표시) ⭐️ */
+.generated-image-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background-color: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  max-width: 350px;
+  text-align: center;
+}
+
+.generated-image-preview h3 {
+  color: #333;
+  margin-bottom: 1rem;
+}
+
+.generated-avatar-display {
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 4px solid #81d4fa;
+  margin-bottom: 1.5rem;
+}
+
+.go-to-dashboard-button {
+  background-color: #007bff;
+  color: white;
+  padding: 0.8rem 1.5rem;
+  border: none;
+  border-radius: 2rem;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  width: 80%;
+  max-width: 250px;
+}
+
+.go-to-dashboard-button:hover {
+  background-color: #0056b3;
+}
+
+.error-message {
+  color: #ff4444;
+  text-align: center;
+  padding: 20px;
+  background-color: #ffecec;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+
+/* 이미지 메시지 관련 스타일 추가 */
+.message-with-image {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.chat-image {
+    max-width: 200px;
+    max-height: 200px;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin: 5px 0;
+    object-fit: contain;
+}
+
+.chat-bubble.bot .message-with-image {
+    align-items: flex-start;
+}
+
+.chat-bubble.user .message-with-image {
+    align-items: flex-end;
+}
+
+/* 기존 추천 식단 관련 스타일 (필요 없다면 제거) */
+/* .recommendation-title, .menu-list, .menu-card 등 */

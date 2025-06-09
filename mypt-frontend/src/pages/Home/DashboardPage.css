@@ -1,0 +1,154 @@
+/* src/pages/Home/DashboardPage.css */
+
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start; /* 상단부터 배치 */
+  padding: 1.5rem 1rem; /* 상단 여백 추가 */
+  height: 100%; /* 부모의 높이(app-container)를 따름 */
+  box-sizing: border-box; /* 패딩이 너비에 포함되도록 */
+}
+
+/* 상단 버튼 컨테이너 */
+.dashboard-buttons {
+  display: flex;
+  justify-content: space-around; /* 버튼 간의 공간을 균등하게 */
+  width: 100%;
+  max-width: 400px; /* 버튼 그룹의 최대 너비 */
+  margin-bottom: 2rem; /* 캐릭터 공간과의 간격 */
+  gap: 1rem; /* 버튼 사이의 간격 */
+}
+
+.dashboard-button {
+  background-color: #81d4fa; /* ⭐️⭐️⭐️ 파란색 계열로 변경 ⭐️⭐️⭐️ */
+  color: white;
+  padding: 0.8rem 1.5rem;
+  border: none;
+  border-radius: 2rem; /* 둥근 버튼 */
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  flex: 1; /* 버튼이 공간을 균등하게 차지하도록 */
+  white-space: nowrap; /* 텍스트가 줄바꿈되지 않도록 */
+}
+
+.dashboard-button:hover {
+  background-color: #64b5f6; /* ⭐️⭐️⭐️ 호버 시 약간 더 진한 파란색 ⭐️⭐️⭐️ */
+}
+
+/* 운동 시작하기 버튼에 더 넓은 패딩이 필요하다면 */
+.workout-button {
+  /* padding-right: 2rem; */
+}
+
+/* 식단 기록하기 버튼에 더 넓은 패딩이 필요하다면 */
+.diet-button {
+  /* padding-left: 2rem; */
+}
+
+/* 중앙 캐릭터/이미지 영역 */
+.dashboard-character-area {
+  flex-grow: 1; /* 남은 공간을 최대한 차지하여 중앙에 위치 */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.character-placeholder {
+  width: 250px; /* 파란색 원의 크기 */
+  height: 250px;
+  background-color: #81d4fa; /* 파란색 (이미지 참고) */
+  border-radius: 50%; /* 원형 */
+  display: flex; /* 이미지 중앙 정렬을 위해 */
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); /* 그림자 효과 */
+  overflow: hidden; /* 이미지가 원 밖으로 나가지 않도록 */
+  margin: 20px 0;
+  position: relative;
+}
+
+/* 실제 캐릭터 이미지가 들어갈 경우를 대비 */
+.character-image {
+  width: 200px;
+  height: 200px;
+  object-fit: cover;
+  border-radius: 50%;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  transition: transform 0.3s ease;
+}
+
+.character-image:hover {
+  transform: scale(1.05);
+  cursor: pointer;
+}
+
+/* 타이머 오버레이 스타일 수정 */
+.timer-overlay {
+  position: absolute;
+  top: -40px;  /* 원 바깥으로 위치 변경 */
+  left: 50%;   /* 가운데 정렬을 위해 */
+  transform: translateX(-50%);  /* 가운데 정렬 완성 */
+  background-color: #81d4fa;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: bold;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+/* 타이머 아이콘 추가 */
+.timer-overlay::before {
+  content: "⏱️";
+  font-size: 16px;
+}
+
+/* 타이머 애니메이션 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 타이머 호버 효과 */
+.timer-overlay:hover {
+  background-color: rgba(0, 0, 0, 0.8);
+  transform: scale(1.05);
+  transition: all 0.2s ease;
+}
+
+/* 모바일 환경에서의 타이머 크기 조정 */
+@media (max-width: 768px) {
+  .timer-overlay {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+}
+
+/* 데스크톱 환경을 위한 미디어 쿼리 (필요하다면) */
+@media (min-width: 768px) {
+  .dashboard-container {
+    padding: 3rem 1.5rem;
+  }
+  .dashboard-buttons {
+    max-width: 500px;
+  }
+  .character-placeholder {
+    width: 300px;
+    height: 300px;
+  }
+}
