@@ -79,6 +79,7 @@ def clear_model_cache():
 # ===== 기존 함수들 유지 =====
 def load_yolo_model(model_path=None):
     """YOLO 모델 로드 - 기존 그대로"""
+
     if model_path is None:
         model_path = "models/yolo11s.pt"
     
@@ -321,7 +322,60 @@ class EnhancedYOLODetector:
         self.brand_mappings = BRAND_MAPPINGS
         self.correction_rules = CORRECTION_RULES  # 🆕 일반화된 보정 규칙
         print(f"🚀 Enhanced YOLO 초기화: {len(self.models)}개 모델, {len(self.brand_mappings)}개 브랜드, {len(self.correction_rules)}개 보정 규칙")
+    def detect_objects(self, image_input, confidence=0.5):
+        """EnhancedYOLODetector용 객체 탐지 메서드"""
+        try:
+            # 이미지 전처리
+            if isinstance(image_input, str):
+                # 파일 경로인 경우
+                image_path = image_input
+            else:
+                # 이미지 객체인 경우 임시 파일로 저장
+                import tempfile
+                import cv2
+                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+                    cv2.imwrite(tmp.name, image_input)
+                    image_path = tmp.name
+            
+            # 첫 번째 사용 가능한 모델로 탐지
+            if not self.models:
+                return [], None
+            
+            model_name, model = next(iter(self.models.items()))
+            print(f"🔍 채소 분석용 탐지 (모델: {model_name})")
+            
+            # 전역 detect_objects 함수 사용
+            detections, result_image = detect_objects(model, image_path, confidence)
+            
+            return detections, result_image
+            
+        except Exception as e:
+            print(f"❌ EnhancedYOLODetector.detect_objects 실패: {e}")
+            return [], None
     
+    def _create_vegetable_confidence_score(self, predictions, color_analysis, shape_analysis):
+        """채소 예측 신뢰도 계산"""
+        try:
+            if not predictions:
+                return 0.5
+            
+            base_confidence = 0.7
+            
+            # 색상 기반 보정
+            primary_color = color_analysis.get("primary_color", "")
+            if primary_color in ["진한초록색", "중간초록색", "연한초록색"]:
+                base_confidence += 0.1
+            
+            # 모양 기반 보정  
+            primary_shape = shape_analysis.get("primary_shape", "")
+            if primary_shape in ["불규칙형", "원형"]:
+                base_confidence += 0.05
+            
+            return min(base_confidence, 0.95)
+            
+        except Exception as e:
+            print(f"⚠️ 신뢰도 계산 실패: {e}")
+            return 0.7
     def analyze_ocr_first(self, ocr_text):
         """OCR 우선 브랜드 인식 - 기존 그대로"""
         if not ocr_text or not ocr_text.strip():
@@ -441,20 +495,7 @@ class EnhancedYOLODetector:
                     percentage = (color_pixels / total_pixels) * 100
                     if percentage > 3:
                         color_percentages[color_name] = round(percentage, 1)
-            color_percentages = {}
-            total_pixels = image.shape[0] * image.shape[1]
-            
-            for color_name, (lower, upper) in color_ranges.items():
-                lower = np.array(lower)
-                upper = np.array(upper)
-                
-                mask = cv2.inRange(hsv, lower, upper)
-                color_pixels = np.sum(mask > 0)
-                percentage = (color_pixels / total_pixels) * 100
-                
-                if percentage > 3:  # 3% 이상인 색상만 기록 (더 민감하게)
-                    color_percentages[color_name] = round(percentage, 1)
-            
+
             # 색상 그룹별 통합 분석
             grouped_colors = self._group_similar_colors(color_percentages)
             
@@ -633,86 +674,6 @@ class EnhancedYOLODetector:
             print(f"❌ 크기 분석 실패: {e}")
             return {"objects": [], "size_distribution": {}}
 
-    def analyze_shapes(self, image):
-        """모양 분석"""
-        try:
-            # 그레이스케일 변환
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            
-            # 가우시안 블러 적용
-            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-            
-            # 엣지 검출
-            edges = cv2.Canny(blurred, 50, 150)
-            
-            # 윤곽선 찾기
-            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
-            shapes_found = []
-            
-            for contour in contours:
-                # 면적이 너무 작은 윤곽선 제외
-                area = cv2.contourArea(contour)
-                if area < 1000:
-                    continue
-                
-                # 윤곽선 근사화
-                epsilon = 0.02 * cv2.arcLength(contour, True)
-                approx = cv2.approxPolyDP(contour, epsilon, True)
-                
-                # 경계 상자
-                x, y, w, h = cv2.boundingRect(contour)
-                aspect_ratio = float(w) / h
-                
-                # 모양 분류
-                shape_info = self._classify_shape(approx, aspect_ratio, area)
-                shape_info.update({
-                    "area": int(area),
-                    "aspect_ratio": round(aspect_ratio, 2),
-                    "bounding_box": [x, y, w, h]
-                })
-                
-                shapes_found.append(shape_info)
-            
-            # 면적 기준으로 정렬 (큰 것부터)
-            shapes_found.sort(key=lambda x: x["area"], reverse=True)
-            
-            return {
-                "total_objects": len(shapes_found),
-                "shapes": shapes_found[:5],
-                "primary_shape": shapes_found[0]["shape"] if shapes_found else "알수없음"
-            }
-            
-        except Exception as e:
-            print(f"❌ 모양 분석 실패: {e}")
-            return {"total_objects": 0, "shapes": [], "primary_shape": "알수없음"}
-
-    def _classify_shape(self, approx, aspect_ratio, area):
-        """모양 분류"""
-        vertices = len(approx)
-        
-        if vertices == 3:
-            return {"shape": "삼각형", "description": "뾰족한 형태"}
-        elif vertices == 4:
-            if 0.95 <= aspect_ratio <= 1.05:
-                return {"shape": "정사각형", "description": "네모난 형태"}
-            else:
-                return {"shape": "직사각형", "description": "길쭉한 형태"}
-        elif vertices > 8:
-            # 원형성 계산
-            perimeter = cv2.arcLength(approx, True)
-            circularity = 4 * np.pi * area / (perimeter * perimeter)
-            
-            if circularity > 0.7:
-                if aspect_ratio > 1.5:
-                    return {"shape": "타원형", "description": "길쭉한 원형 (바나나형)"}
-                else:
-                    return {"shape": "원형", "description": "둥근 형태 (사과, 토마토형)"}
-            else:
-                return {"shape": "불규칙형", "description": "복잡한 형태"}
-        else:
-            return {"shape": f"{vertices}각형", "description": "다각형 형태"}
-        
     def predict_food_by_color(self, primary_color):
         """색상 기반 식품 예측 - 기존 그대로"""
         color_food_map = {
@@ -1058,53 +1019,6 @@ class EnhancedYOLODetector:
         
         return assessment
     
-    def analyze_sizes(self, image):
-        """크기 분석"""
-        try:
-            h, w = image.shape[:2]
-            total_area = h * w
-            
-            # 그레이스케일 변환
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            
-            # 임계값 처리로 객체 분리
-            _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            
-            # 윤곽선 찾기
-            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
-            object_sizes = []
-            
-            for contour in contours:
-                area = cv2.contourArea(contour)
-                if area > 500:  # 최소 크기 필터
-                    relative_size = (area / total_area) * 100
-                    x, y, w, h = cv2.boundingRect(contour)
-                    
-                    size_category = "소형"
-                    if relative_size > 20:
-                        size_category = "대형"
-                    elif relative_size > 10:
-                        size_category = "중형"
-                    
-                    object_sizes.append({
-                        "absolute_area": int(area),
-                        "relative_size": round(relative_size, 1),
-                        "category": size_category,
-                        "dimensions": [w, h]
-                    })
-            
-            # 크기 순으로 정렬
-            object_sizes.sort(key=lambda x: x["absolute_area"], reverse=True)
-            
-            return {
-                "objects": object_sizes[:3],
-                "size_distribution": self._categorize_sizes(object_sizes)
-            }
-            
-        except Exception as e:
-            print(f"❌ 크기 분석 실패: {e}")
-            return {"objects": [], "size_distribution": {}}
     def enhanced_vegetable_analysis(self, image_input, confidence=0.5):
         """채소 전용 향상 분석"""
         try:
