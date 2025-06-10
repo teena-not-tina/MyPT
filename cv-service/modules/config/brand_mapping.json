@@ -1,0 +1,49 @@
+{
+    "_description": "브랜드 매핑 설정 파일",
+    "_version": "1.0",
+    "_categories": ["커피", "과자", "음료", "우유", "과일", "라면"],
+    "커피": {
+        "brands": ["메가커피", "MEGA", "MGC", "mega coffee", "컴포즈", "COMPOSE", "compose coffee",
+                  "스타벅스", "STARBUCKS", "starbucks", "투썸", "TWOSOME", "twosome place",
+                  "이디야", "EDIYA", "ediya coffee", "폴바셋", "PAUL BASSETT", "paul bassett",
+                  "할리스", "HOLLYS", "hollys coffee", "빽다방", "PAIK", "paiks coffee"],
+        "default_product": "커피",
+        "common_products": ["아메리카노", "카페라떼", "카푸치노", "에스프레소",
+                          "카페모카", "마키아토", "콜드브루", "바닐라라떼"],
+        "unit_size": 200,
+        "unit": "ml"
+    },
+    "과자": {
+        "brands": ["오리온", "ORION", "농심", "NONGSHIM", "롯데", "LOTTE", 
+                  "해태", "HAITAI", "크라운", "CROWN"],
+        "default_product": "과자",
+        "common_products": ["초코파이", "새우깡", "허니버터칩", "포카칩",
+                          "프링글스", "오감자", "꼬북칩", "치토스"],
+        "unit_size": 100,
+        "unit": "g"
+    },
+    "음료": {
+        "brands": ["코카콜라", "COCA COLA", "COKE", "펩시", "PEPSI", 
+                  "칠성사이다", "CHILSUNG", "환타", "FANTA", "스프라이트", "SPRITE"],
+        "default_product": "음료",
+        "common_products": ["콜라", "사이다", "환타", "스프라이트"],
+        "unit_size": 250,
+        "unit": "ml"
+    },
+    "우유": {
+        "brands": ["서울우유", "SEOUL MILK", "매일유업", "MAEIL", "남양", "NAMYANG",
+                  "덴마크", "DENMARK", "상하목장", "SANGHA"],
+        "default_product": "우유",
+        "common_products": ["흰우유", "초콜릿우유", "딸기우유", "바나나우유", "두유"],
+        "unit_size": 200,
+        "unit": "ml"
+    },
+    "과일": {
+        "brands": ["델몬트", "DELMONTE", "선키스트", "SUNKIST", "도레", "DOLE", 
+                  "미닛메이드", "MINUTE MAID"],
+        "default_product": "과일주스",
+        "common_products": ["오렌지주스", "사과주스", "포도주스", "토마토주스"],
+        "unit_size": 250,
+        "unit": "ml"
+    }
+}

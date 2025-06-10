@@ -1,0 +1,26 @@
+{
+  "color_ranges": {"red": {
+      "foods": ["사과", "토마토", "딸기", "체리"],
+      "confidence_boost": 0.1
+    },
+    "orange": {
+      "foods": ["오렌지", "당근", "호박", "감"],
+      "confidence_boost": 0.15
+    },
+    "yellow": {
+      "foods": ["바나나", "레몬", "옥수수", "파인애플"],
+      "confidence_boost": 0.1
+    },
+    "green": {
+      "foods": ["브로콜리", "상추", "오이", "시금치"],
+      "confidence_boost": 0.2
+    }
+  },
+  "correction_rules": [
+    {
+      "from_color": "orange",
+      "to_foods": ["당근", "호박", "오렌지"],
+      "min_confidence": 0.7
+    }
+  ]
+}
