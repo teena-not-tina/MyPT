@@ -103,23 +103,26 @@ async def analyze_image(image_base64: str) -> Dict:
                                 # OCR 텍스트가 있는지 확인
                                 if 'ocr_text' in brand_info and brand_info['ocr_text']:
                                     ocr_text = brand_info['ocr_text']
-                                    ocr_results.append({'text': ocr_text})
-                                    print(f"✅ OCR 텍스트 발견: {ocr_text[:50]}...")
+                                    print(f"✅ OCR 텍스트 발견 (ocr_text): {ocr_text[:50]}...")
                                 
                                 # detected_text 확인
                                 elif 'detected_text' in brand_info:
                                     detected_texts = brand_info['detected_text']
                                     if isinstance(detected_texts, list) and detected_texts:
                                         ocr_text = detected_texts[0]  # 첫 번째 텍스트 사용
-                                        for text in detected_texts:
-                                            if text:
-                                                ocr_results.append({'text': str(text)})
                                         print(f"✅ OCR 텍스트 발견 (detected_text): {len(detected_texts)}개")
                                     elif isinstance(detected_texts, str) and detected_texts:
                                         ocr_text = detected_texts
-                                        ocr_results.append({'text': detected_texts})
+                                        print(f"✅ OCR 텍스트 발견 (detected_text): {detected_texts[:50]}...")
+                            
+                            # brand_info가 string인 경우
+                            elif isinstance(brand_info, str) and brand_info:
+                                ocr_text = brand_info
+                                print(f"✅ OCR 텍스트 발견 (brand_info as string): {brand_info[:50]}...")
                         else:
                             print("⚠️ brand_info가 None이거나 비어있음")
+                    else:
+                        print("⚠️ enhanced_info가 없거나 dict가 아님")
                                 
                 except Exception as ocr_error:
                     print(f"⚠️ OCR 결과 추출 중 오류: {ocr_error}")
@@ -251,13 +254,6 @@ async def analyze_image(image_base64: str) -> Dict:
                         print(f"❌ Gemini 분석 중 오류: {gemini_error}")
                         traceback.print_exc()
                 
-                # 최종 결과 구성
-                result = {
-                    'detections': formatted_detections,
-                    'ocr_text': ocr_text,  # 원본 OCR 텍스트 (내부 처리용)
-                    'gemini_analysis': gemini_result  # Gemini 분석 결과
-                }
-                
                 # 결과 요약 출력
                 print(f"\n📊 분석 결과 요약:")
                 print(f"   - 탐지된 객체: {len(formatted_detections)}개")
@@ -269,6 +265,13 @@ async def analyze_image(image_base64: str) -> Dict:
                 else:
                     print(f"   - Gemini 분석: 없음")
                     print(f"   - 최종 표시: 모든 탐지 결과 표시 예정")
+                
+                # 최종 결과 구성
+                result = {
+                    'detections': formatted_detections,
+                    'ocr_text': ocr_text,  # 원본 OCR 텍스트 (내부 처리용)
+                    'gemini_analysis': gemini_result  # Gemini 분석 결과
+                }
                 
                 return result
                 
@@ -392,7 +395,9 @@ async def simple_webhook(message: ImageMessage):
         
         return {
             "status": "error",
-            "message": f"처리 중 오류가 발생했습니다: {error_msg}"
+            "message": error_msg,
+            "detections": [],
+            "ocr_results": []  # 오류 시에도 빈 배열 반환
         }
 
 @app.get("/")
