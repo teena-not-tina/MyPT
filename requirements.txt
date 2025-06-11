@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-dotenv
+pydantic
+pillow
+aiofiles
+aiohttp
+motor
+pymongo
+apscheduler
+pyjwt
+bson
