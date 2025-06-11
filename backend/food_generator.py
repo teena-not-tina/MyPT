@@ -25,11 +25,12 @@ def delete_food_data(user_id):
         db = client[DB_NAME]
         collection = db.user_image
         result = collection.update_one(
-            {'email': user_id},
-            {'$unset': {'food': 1}}
-        )
+        {'user_id': user_id},
+        {'$unset': {'food': 1}}
+)
         if result.modified_count > 0:
-            print(f"MongoDB: food 데이터 삭제 완료 (email: {user_id})")
+            print(f"MongoDB: food 데이터 삭제 완료 (user_id: {user_id})")
+
     except Exception as e:
         print(f"MongoDB 삭제 오류: {str(e)}")
     finally:
@@ -53,10 +54,12 @@ def save_food_image(user_id, image_base64, previous_image=None):
         if previous_image:
             update_data['food']['previous_image'] = previous_image
         result = collection.update_one(
-            {'email': user_id},
-            {'$set': update_data},
-            upsert=True
-        )
+    {'user_id': user_id},
+    {'$set': update_data},
+    upsert=True
+)
+        print(f"MongoDB: 이미지 {'업데이트' if result.matched_count else '저장'} 완료 (user_id: {user_id}, 60초 후 삭제 예정)")
+
         delete_thread = threading.Thread(
             target=delete_food_data,
             args=(user_id,)
@@ -70,8 +73,9 @@ def save_food_image(user_id, image_base64, previous_image=None):
         return False
     finally:
         client.close()
-
-def generate_image_from_comfyui(prompt, user_id="test@mail.com"):
+#user_id = 644531  # 기본 user_id 설정
+def generate_image_from_comfyui(prompt, user_id=
+644531):
     # [🎨 ComfyUI로 이미지 생성 및 저장]
     try:
         COMFYUI_API_URL = os.getenv('COMFYUI_API_URL', 'http://localhost:8188')
